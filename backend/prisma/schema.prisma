@@ -1,0 +1,13 @@
+// Prisma schema for the helpdesk app.
+// Run `bun run db:migrate` after changes to create a migration and apply it.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+

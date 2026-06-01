@@ -22,11 +22,20 @@ Read these before making non-trivial changes; they hold decisions that aren't ye
 ## Repo layout
 
 ```
-backend/    Express + TypeScript, run on Bun
-frontend/   React + TypeScript + React Router, Vite dev server
+backend/             Express + TypeScript, run on Bun
+frontend/            React + TypeScript + React Router, Vite dev server
+docker-compose.yml   Local PostgreSQL for development
 ```
 
 The frontend dev server proxies `/api/*` to the backend at `http://localhost:3001`, so frontend code calls relative paths (e.g. `fetch("/api/hello")`) with no CORS setup.
+
+## Database
+
+- PostgreSQL via `docker compose up -d` at the repo root. Database name: `helpdesk`. Default credentials match `backend/.env.example`.
+- Prisma 7 with the **driver-adapter** approach (`@prisma/adapter-pg`). The native engine binary is *not* used — this is intentional for Bun compatibility.
+- Schema lives in `backend/prisma/schema.prisma`. Generated client output: `backend/src/generated/prisma` (gitignored). Import client from `./generated/prisma/client.ts` (the `.ts` extension is required by the backend's `verbatimModuleSyntax`).
+- Singleton wrapper: `backend/src/prisma.ts`. Always import `prisma` from there — never instantiate `PrismaClient` ad hoc.
+- After a schema change: `bun run db:migrate` (creates and applies a migration in dev). For client-only regen: `bun run db:generate`.
 
 ## Running locally
 
@@ -67,7 +76,7 @@ Don't use it for: business-logic debugging, refactoring, code review, or general
 
 ## Where we are in the plan
 
-See `implementation-plan.md` for the full phased breakdown. The scaffold currently in place corresponds to **Phase 1 — Foundation & Setup**, minus Tailwind, Docker Compose, and Prisma, which are still to come.
+See `implementation-plan.md` for the full phased breakdown. The scaffold currently in place corresponds to **Phase 1 — Foundation & Setup**, minus Tailwind, which is still to come.
 
 When picking up new work, check `implementation-plan.md` to see which phase the task belongs to and what its prerequisites are.
 
