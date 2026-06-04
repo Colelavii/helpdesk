@@ -12,10 +12,10 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "db:seed": "bun run src/seed.ts"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "^7.6.0",
     "@prisma/client": "6",
     "better-auth": "^1.6.13",
     "express": "^5.1.0"
