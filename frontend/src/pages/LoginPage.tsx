@@ -1,24 +1,34 @@
-import { useState, type FormEvent } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { useNavigate } from "react-router-dom";
 import { signIn } from "../lib/auth-client";
 
+const loginSchema = z.object({
+  email: z.email("Enter a valid email address"),
+  password: z.string().min(1, "Password is required"),
+});
+
+type LoginValues = z.infer<typeof loginSchema>;
+
 export default function LoginPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm<LoginValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: "", password: "" },
+  });
 
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    setError(null);
-    setPending(true);
-
-    const { error } = await signIn.email({ email, password });
-
-    setPending(false);
+  async function onSubmit(values: LoginValues) {
+    const { error } = await signIn.email(values);
     if (error) {
-      setError(error.message ?? "Unable to sign in. Check your credentials.");
+      setError("root", {
+        message: error.message ?? "Unable to sign in. Check your credentials.",
+      });
       return;
     }
     navigate("/", { replace: true });
@@ -27,7 +37,8 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
       <form
-        onSubmit={handleSubmit}
+        onSubmit={handleSubmit(onSubmit)}
+        noValidate
         className="w-full max-w-sm space-y-5 rounded-xl border border-gray-200 bg-white p-8 shadow-sm"
       >
         <div>
@@ -46,11 +57,16 @@ export default function LoginPage() {
             id="email"
             type="email"
             autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            {...register("email")}
+            className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-1 ${
+              errors.email
+                ? "border-red-500 focus:border-red-500 focus:ring-red-500"
+                : "border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+            }`}
           />
+          {errors.email && (
+            <p className="text-sm text-red-600">{errors.email.message}</p>
+          )}
         </div>
 
         <div className="space-y-1">
@@ -64,25 +80,30 @@ export default function LoginPage() {
             id="password"
             type="password"
             autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            {...register("password")}
+            className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-1 ${
+              errors.password
+                ? "border-red-500 focus:border-red-500 focus:ring-red-500"
+                : "border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+            }`}
           />
+          {errors.password && (
+            <p className="text-sm text-red-600">{errors.password.message}</p>
+          )}
         </div>
 
-        {error && (
+        {errors.root && (
           <p role="alert" className="text-sm text-red-600">
-            {error}
+            {errors.root.message}
           </p>
         )}
 
         <button
           type="submit"
-          disabled={pending}
+          disabled={isSubmitting}
           className="w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {pending ? "Signing in…" : "Sign in"}
+          {isSubmitting ? "Signing in…" : "Sign in"}
         </button>
       </form>
     </div>
