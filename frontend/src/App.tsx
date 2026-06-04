@@ -1,46 +1,40 @@
-import { useEffect, useState } from "react";
-import { Link, Route, Routes } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes } from "react-router-dom";
+import NavBar from "./components/NavBar";
+import ProtectedRoute from "./components/ProtectedRoute";
+import HomePage from "./pages/HomePage";
+import TicketsPage from "./pages/TicketsPage";
+import LoginPage from "./pages/LoginPage";
+import { useSession } from "./lib/auth-client";
 
-function Home() {
-  const [message, setMessage] = useState<string>("loading...");
-
-  useEffect(() => {
-    fetch("/api/hello")
-      .then((r) => r.json())
-      .then((data: { message: string }) => setMessage(data.message))
-      .catch(() => setMessage("backend unreachable"));
-  }, []);
-
+function AppLayout() {
   return (
-    <section>
-      <h1>Helpdesk</h1>
-      <p>Backend says: {message}</p>
-    </section>
+    <div className="min-h-screen bg-gray-50">
+      <NavBar />
+      <main className="px-6 py-6">
+        <Outlet />
+      </main>
+    </div>
   );
 }
 
-function Tickets() {
-  return (
-    <section>
-      <h1>Tickets</h1>
-      <p>Placeholder for the ticket list.</p>
-    </section>
-  );
+function LoginRoute() {
+  const { data: session, isPending } = useSession();
+  if (isPending) return null;
+  if (session) return <Navigate to="/" replace />;
+  return <LoginPage />;
 }
 
 export default function App() {
   return (
-    <div>
-      <nav style={{ display: "flex", gap: "1rem", padding: "1rem" }}>
-        <Link to="/">Home</Link>
-        <Link to="/tickets">Tickets</Link>
-      </nav>
-      <main style={{ padding: "1rem" }}>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/tickets" element={<Tickets />} />
-        </Routes>
-      </main>
-    </div>
+    <Routes>
+      <Route path="/login" element={<LoginRoute />} />
+      <Route element={<ProtectedRoute />}>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/tickets" element={<TicketsPage />} />
+        </Route>
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
