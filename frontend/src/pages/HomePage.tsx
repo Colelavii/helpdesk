@@ -12,8 +12,10 @@ export default function HomePage() {
 
   return (
     <section>
-      <h1 className="text-2xl font-semibold text-gray-900">Helpdesk</h1>
-      <p className="mt-2 text-gray-600">Backend says: {message}</p>
+      <h1 className="text-2xl font-semibold tracking-tight">Helpdesk</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Backend says: {message}
+      </p>
     </section>
   );
 }

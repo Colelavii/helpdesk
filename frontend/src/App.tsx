@@ -8,7 +8,7 @@ import { useSession } from "./lib/auth-client";
 
 function AppLayout() {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-muted">
       <NavBar />
       <main className="px-6 py-6">
         <Outlet />
