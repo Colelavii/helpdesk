@@ -46,7 +46,8 @@ Better Auth (email/password only), configured in `backend/src/auth.ts` with the 
 - **Create users via Better Auth, never raw Prisma writes**: passwords must be hashed with Better Auth's own hasher. The seed shows the pattern — `auth.$context` → `ctx.internalAdapter.createUser` + `ctx.password.hash` + `linkAccount` with `providerId: "credential"`.
 - **`role` (`admin` | `agent`)** is a Better Auth additional field with `input: false`: it can never be set through the API, only server-side. Default is `agent`.
 - **Protecting backend routes**: use `requireAuth` from `backend/src/require-auth.ts`; it resolves the session cookie and sets `req.user` / `req.session` (typed via module augmentation). A `requireAdmin` middleware does not exist yet.
-- **Frontend client**: `frontend/src/lib/auth-client.ts` exports `signIn`, `signOut`, `useSession` from `createAuthClient()` — deliberately no `baseURL`, since the Vite proxy maps the default `/api/auth` basePath to the backend. Route guarding is `frontend/src/components/ProtectedRoute.tsx`.
+- **Frontend client**: `frontend/src/lib/auth-client.ts` exports `signIn`, `signOut`, `useSession` from `createAuthClient()` — deliberately no `baseURL`, since the Vite proxy maps the default `/api/auth` basePath to the backend. It declares `role` via the `inferAdditionalFields` client plugin (the backend's auth type can't be imported across packages) — keep that declaration in sync with `user.additionalFields` in `backend/src/auth.ts`.
+- **Frontend route guards**: `frontend/src/components/ProtectedRoute.tsx` (session required → else `/login`) and, nested inside it, `frontend/src/components/AdminRoute.tsx` (`role === "admin"` → else `/`). These are client-side UX only — any admin-only API still needs server-side enforcement.
 - **Required env vars** (see `backend/.env.example`): `BETTER_AUTH_SECRET` (min 32 chars), `BETTER_AUTH_URL`, and `TRUSTED_ORIGINS` (comma-separated browser origins; the server throws on startup if unset).
 
 ## Running locally
@@ -90,7 +91,7 @@ Don't use it for: business-logic debugging, refactoring, code review, or general
 
 ## Where we are in the plan
 
-See `implementation-plan.md` for the full phased breakdown. **Phase 1 — Foundation & Setup** is complete (Tailwind v4 + shadcn/ui included). **Phase 2 — Authentication** is underway: Better Auth with email/password login, protected routes, and an admin seed script are in place; the UI (login, nav, layout, tickets placeholder) uses shadcn components throughout.
+See `implementation-plan.md` for the full phased breakdown. **Phase 1 — Foundation & Setup** is complete (Tailwind v4 + shadcn/ui included). **Phase 2 — Authentication** is underway: Better Auth with email/password login, protected routes, and an admin seed script are in place; the UI (login, nav, layout, tickets placeholder) uses shadcn components throughout. An admin-only `/users` page exists (heading placeholder, guarded by `AdminRoute`; the NavBar shows its link to admins only) — user management itself is not built yet.
 
 When picking up new work, check `implementation-plan.md` to see which phase the task belongs to and what its prerequisites are.
 

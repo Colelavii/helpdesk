@@ -26,6 +26,14 @@ export default function NavBar() {
         >
           Tickets
         </Link>
+        {session?.user.role === "admin" && (
+          <Link
+            to="/users"
+            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Users
+          </Link>
+        )}
       </div>
       {session && (
         <div className="flex items-center gap-4">
