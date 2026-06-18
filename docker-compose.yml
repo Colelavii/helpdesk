@@ -8,11 +8,35 @@ services:
       POSTGRES_PASSWORD: Password!11
       POSTGRES_DB: helpdesk
     ports:
-      - "5432:5432"
+      # Host 5434 (not 5432) because a native PostgreSQL 18 service occupies
+      # localhost:5432 on this machine and would otherwise shadow this container.
+      - "5434:5432"
     volumes:
       - helpdesk-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d helpdesk"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Disposable database for Playwright e2e tests. Only starts with the "test"
+  # profile (`docker compose --profile test up -d postgres-test`). Data lives in
+  # tmpfs, so it is wiped when the container stops — never shares state with dev.
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: helpdesk-postgres-test
+    profiles: ["test"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: helpdesk_test
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d helpdesk_test"]
       interval: 5s
       timeout: 5s
       retries: 5

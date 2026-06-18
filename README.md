@@ -38,7 +38,7 @@ cd ..\frontend
 bun install
 ```
 
-The backend `.env` defaults to `postgresql://postgres:postgres@localhost:5432/helpdesk?schema=public`, which matches `docker-compose.yml`.
+The backend `.env` defaults to `postgresql://postgres:postgres@localhost:5434/helpdesk?schema=public`, which matches `docker-compose.yml`. The dev DB is published on host port **5434** (not the usual 5432) so it doesn't collide with a native PostgreSQL install that may already own 5432.
 
 ## Running locally
 

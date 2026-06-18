@@ -4,3 +4,9 @@ node_modules/
 *.log
 bun.lock
 .DS_Store
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/blob-report/

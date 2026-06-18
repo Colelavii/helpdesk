@@ -14,7 +14,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://localhost:3001",
+        // Overridable so the Playwright test frontend can proxy to the test
+        // backend (port 3101) instead of the dev backend (3001).
+        target: process.env.BACKEND_URL ?? "http://localhost:3001",
         changeOrigin: true,
       },
     },

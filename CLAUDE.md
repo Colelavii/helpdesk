@@ -32,6 +32,7 @@ The frontend dev server proxies `/api/*` to the backend at `http://localhost:300
 ## Database
 
 - PostgreSQL via `docker compose up -d` at the repo root. Database name: `helpdesk`. Default credentials match `backend/.env.example`.
+- **Dev DB is published on host port 5434**, not 5432: a native PostgreSQL 18 service on this machine owns `localhost:5432` and would otherwise shadow the container (the app would silently use the native server instead). `backend/.env`'s `DATABASE_URL` points at 5434. If auth fails after changing the compose password, the named volume `helpdesk_helpdesk-postgres-data` was initialized with the old password — reset it (`docker compose rm -sf postgres && docker volume rm helpdesk_helpdesk-postgres-data && docker compose up -d --wait postgres`), then re-migrate/seed.
 - Prisma 7 with the **driver-adapter** approach (`@prisma/adapter-pg`). The native engine binary is *not* used — this is intentional for Bun compatibility.
 - Schema lives in `backend/prisma/schema.prisma`. Generated client output: `backend/src/generated/prisma` (gitignored). Import client from `./generated/prisma/client.ts` (the `.ts` extension is required by the backend's `verbatimModuleSyntax`).
 - Singleton wrapper: `backend/src/prisma.ts`. Always import `prisma` from there — never instantiate `PrismaClient` ad hoc.
@@ -48,6 +49,7 @@ Better Auth (email/password only), configured in `backend/src/auth.ts` with the 
 - **Protecting backend routes**: use `requireAuth` from `backend/src/require-auth.ts`; it resolves the session cookie and sets `req.user` / `req.session` (typed via module augmentation). For admin-only routes, chain `requireAdmin` from `backend/src/require-admin.ts` *after* `requireAuth` (e.g. `app.get("/api/users", requireAuth, requireAdmin, handler)`) — it checks `req.user.role === "admin"` and 403s otherwise. It is authorization only and assumes `requireAuth` already populated `req.user`.
 - **Frontend client**: `frontend/src/lib/auth-client.ts` exports `signIn`, `signOut`, `useSession` from `createAuthClient()` — deliberately no `baseURL`, since the Vite proxy maps the default `/api/auth` basePath to the backend. It declares `role` via the `inferAdditionalFields` client plugin (the backend's auth type can't be imported across packages) — keep that declaration in sync with `user.additionalFields` in `backend/src/auth.ts`.
 - **Frontend route guards**: `frontend/src/components/ProtectedRoute.tsx` (session required → else `/login`) and, nested inside it, `frontend/src/components/AdminRoute.tsx` (`role === "admin"` → else `/`). These are client-side UX only — any admin-only API still needs server-side enforcement.
+- **Rate limiting** (`rateLimit` in `auth.ts`): enabled only when `NODE_ENV === "production"` (off in dev/test so iteration and e2e aren't throttled). Global 100 req/60s across auth routes; credential sign-in (`/sign-in/email`) is tightened to 5/60s. Better Auth keys limits by client IP from the `x-forwarded-for` header — so in production the reverse proxy **must** set/forward it, or all clients share one bucket and per-client throttling won't work. Verified: in production the 6th sign-in returns 429; in dev it never does.
 - **Required env vars** (see `backend/.env.example`): `BETTER_AUTH_SECRET` (min 32 chars), `BETTER_AUTH_URL`, and `TRUSTED_ORIGINS` (comma-separated browser origins; the server throws on startup if unset).
 
 ## Running locally
@@ -64,6 +66,19 @@ Frontend (`frontend/`):
 - `bun run dev` — Vite dev server (HMR) on `http://localhost:5173`
 - `bun run build` — type-check then build
 - `bun run typecheck` — type-check only
+
+## Testing (e2e)
+
+Playwright drives the full stack (frontend + backend + DB) and lives at the **repo root** (`playwright.config.ts`, root `package.json`, specs in `e2e/`) because it orchestrates both app packages. No tests are written yet — only the harness.
+
+- **Separate test database**: `postgres-test` in `docker-compose.yml`, behind the `test` profile, on port **5433** (db `helpdesk_test`). It is `tmpfs`-backed — disposable and fully isolated from the dev DB (5434). Start it with `bun run test:db:up`, remove it with `bun run test:db:down`.
+- **Isolated ports** so e2e can run alongside `bun run dev`: test backend **3101**, test frontend **5273**, test DB **5433** (dev uses 3001 / 5173 / 5434).
+- **Test env**: `backend/.env.test` is **committed on purpose** — it configures only the disposable local test DB and holds no real secrets. The backend loads it via `bun --env-file=.env.test`; its values override the dev `.env`.
+- **DB prep runs in `globalSetup`, not the webServer**: `global-setup.ts` runs `db:deploy` + `db:seed` (with `--env-file=.env.test`) once before the suite. This is deliberate — the webServer command is skipped when Playwright reuses an already-running server (`reuseExistingServer`), so seeding there would be unreliable and the admin could silently go missing. `globalSetup` always runs.
+- **How a run works**: `playwright.config.ts` defines two start-only `webServer`s — the backend (`bun --env-file=.env.test run start`, port 3101) and Vite on 5273 with `BACKEND_URL=http://localhost:3101` so its `/api` proxy targets the test backend (the proxy target is env-driven in `vite.config.ts`).
+- **Run it**: `bun run test:db:up` once (needs Docker), then `bun run test:e2e` (or `test:e2e:ui`) — migrations and the seed admin are applied automatically by `globalSetup`. First-time only: `bunx playwright install chromium`.
+- **Manual / standalone**: `bun run test:db:setup` brings the DB up *and* migrates + seeds it, so you can poke the test DB without going through Playwright (the seed admin is `admin@example.com`, see `backend/.env.test`).
+- **Root TS config**: the repo root has its own `tsconfig.json` (`types: ["node"]`) covering `playwright.config.ts`, `global-setup.ts`, and `e2e/**` — these use Node APIs, not the backend/frontend configs. Root devDeps add `@types/node` + `typescript`; `bun run typecheck` (from the root) checks them.
 
 ## Fetching up-to-date documentation
 

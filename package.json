@@ -1,0 +1,20 @@
+{
+  "name": "helpdesk-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:db:up": "docker compose --profile test up -d --wait postgres-test",
+    "test:db:down": "docker compose rm -sf postgres-test",
+    "test:db:setup": "bun run test:db:up && cd backend && bun --env-file=.env.test run db:deploy && bun --env-file=.env.test run db:seed",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:report": "playwright show-report",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}
