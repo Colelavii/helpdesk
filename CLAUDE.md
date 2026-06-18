@@ -69,16 +69,9 @@ Frontend (`frontend/`):
 
 ## Testing (e2e)
 
-Playwright drives the full stack (frontend + backend + DB) and lives at the **repo root** (`playwright.config.ts`, root `package.json`, specs in `e2e/`) because it orchestrates both app packages. No tests are written yet — only the harness.
+Playwright drives the full stack (frontend + backend + DB) from the **repo root** (`playwright.config.ts`, root `package.json`, specs in `e2e/`). No tests are written yet — only the harness.
 
-- **Separate test database**: `postgres-test` in `docker-compose.yml`, behind the `test` profile, on port **5433** (db `helpdesk_test`). It is `tmpfs`-backed — disposable and fully isolated from the dev DB (5434). Start it with `bun run test:db:up`, remove it with `bun run test:db:down`.
-- **Isolated ports** so e2e can run alongside `bun run dev`: test backend **3101**, test frontend **5273**, test DB **5433** (dev uses 3001 / 5173 / 5434).
-- **Test env**: `backend/.env.test` is **committed on purpose** — it configures only the disposable local test DB and holds no real secrets. The backend loads it via `bun --env-file=.env.test`; its values override the dev `.env`.
-- **DB prep runs in `globalSetup`, not the webServer**: `global-setup.ts` runs `db:deploy` + `db:seed` (with `--env-file=.env.test`) once before the suite. This is deliberate — the webServer command is skipped when Playwright reuses an already-running server (`reuseExistingServer`), so seeding there would be unreliable and the admin could silently go missing. `globalSetup` always runs.
-- **How a run works**: `playwright.config.ts` defines two start-only `webServer`s — the backend (`bun --env-file=.env.test run start`, port 3101) and Vite on 5273 with `BACKEND_URL=http://localhost:3101` so its `/api` proxy targets the test backend (the proxy target is env-driven in `vite.config.ts`).
-- **Run it**: `bun run test:db:up` once (needs Docker), then `bun run test:e2e` (or `test:e2e:ui`) — migrations and the seed admin are applied automatically by `globalSetup`. First-time only: `bunx playwright install chromium`.
-- **Manual / standalone**: `bun run test:db:setup` brings the DB up *and* migrates + seeds it, so you can poke the test DB without going through Playwright (the seed admin is `admin@example.com`, see `backend/.env.test`).
-- **Root TS config**: the repo root has its own `tsconfig.json` (`types: ["node"]`) covering `playwright.config.ts`, `global-setup.ts`, and `e2e/**` — these use Node APIs, not the backend/frontend configs. Root devDeps add `@types/node` + `typescript`; `bun run typecheck` (from the root) checks them.
+**Always use the `playwright-e2e-author` agent to write, add, or expand e2e tests** — launch it via the Agent tool (`subagent_type: "playwright-e2e-author"`). Do not hand-write Playwright specs inline. The agent owns the authoritative harness details (test DB on port 5433, isolated ports, `globalSetup` seeding, `.env.test` credentials, run commands) and the project's testing conventions; its definition lives at `.claude/agents/playwright-e2e-author.md`. Reach for it both when the user explicitly asks for tests and proactively after a user-facing flow is implemented and needs coverage.
 
 ## Fetching up-to-date documentation
 
