@@ -3,7 +3,14 @@
     "allow": [
       "mcp__context7__resolve-library-id",
       "mcp__context7__query-docs",
-      "PowerShell(bun run *)"
+      "PowerShell(bun run *)",
+      "Write(e2e/**)",
+      "Edit(e2e/**)",
+      "Write(.auth/**)",
+      "Write(playwright.config.ts)",
+      "Edit(playwright.config.ts)",
+      "Bash(bunx playwright *)",
+      "Bash(bun run *)"
     ]
   },
   "enabledPlugins": {

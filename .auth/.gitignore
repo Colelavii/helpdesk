@@ -1,0 +1,2 @@
+# Playwright storageState files contain session cookies — never commit them.
+*.json

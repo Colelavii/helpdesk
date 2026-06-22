@@ -1,0 +1,6 @@
+# Memory index
+
+- [Auth test harness](auth-test-harness.md) — confirmed credentials, ports, storageState patterns, and the project-level inheritance gotcha
+- [Stable selectors — auth](stable-selectors-auth.md) — reliable selectors for the login page, NavBar, and post-login state
+- [Agent provisioning](agent-provisioning.md) — location and invocation of the server-side agent user helper
+- [API endpoints](api-endpoints.md) — which backend routes exist and what auth they require

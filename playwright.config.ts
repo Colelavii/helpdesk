@@ -18,7 +18,23 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    // Setup project: logs in as the seeded admin once and saves the session to
+    // .auth/admin.json. All spec projects that depend on "setup" start with
+    // that storageState pre-loaded, so the login flow itself is tested only in
+    // the tests that explicitly clear storageState.
+    {
+      name: "setup",
+      testMatch: /.*\.setup\.ts/,
+    },
+
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: ".auth/admin.json",
+      },
+      dependencies: ["setup"],
+    },
   ],
   // Two servers. DB migrate + seed happen in globalSetup (not here), so these
   // just start the apps; the frontend proxies /api to the test backend via
