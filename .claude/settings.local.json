@@ -10,7 +10,10 @@
       "Write(playwright.config.ts)",
       "Edit(playwright.config.ts)",
       "Bash(bunx playwright *)",
-      "Bash(bun run *)"
+      "Bash(bun run *)",
+      "Bash(ls pages *)",
+      "Bash(ls components *)",
+      "Bash(bunx --bun shadcn@latest add table)"
     ]
   },
   "enabledPlugins": {

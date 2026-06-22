@@ -2,6 +2,8 @@ import express, { type Request, type Response } from "express";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth.ts";
 import { requireAuth } from "./require-auth.ts";
+import { requireAdmin } from "./require-admin.ts";
+import { prisma } from "./prisma.ts";
 
 const app = express();
 const port = Number(process.env.PORT) || 3001;
@@ -18,6 +20,25 @@ app.get("/api/health", (_req: Request, res: Response) => {
 app.get("/api/me", requireAuth, (req: Request, res: Response) => {
   res.json({ user: req.user });
 });
+
+app.get(
+  "/api/users",
+  requireAuth,
+  requireAdmin,
+  async (_req: Request, res: Response) => {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    res.json({ users });
+  },
+);
 
 app.listen(port, () => {
   console.log(`Backend listening on http://localhost:${port}`);
