@@ -14,7 +14,8 @@
       "Bash(ls pages *)",
       "Bash(ls components *)",
       "Bash(bunx --bun shadcn@latest add table)",
-      "Bash(bun add *)"
+      "Bash(bun add *)",
+      "Bash(bunx --bun shadcn@latest add skeleton)"
     ]
   },
   "enabledPlugins": {
