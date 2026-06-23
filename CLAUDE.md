@@ -96,6 +96,7 @@ Don't use it for: business-logic debugging, refactoring, code review, or general
 - **No comments explaining *what***: identifiers should be self-describing. Only comment the non-obvious *why* (a constraint, a workaround, an invariant).
 - **UI via shadcn/ui**: theme is `radix-vega` with `neutral` base color (`frontend/components.json`) — Radix primitives, not Base UI; don't change this without asking. Add components with `bunx --bun shadcn@latest add <component>`. Note the v4 CLI quirks: `--preset` takes a bare style name (`vega`), base is `-b radix`, and `-d/--defaults` silently forces the Next.js template.
 - **Semantic color tokens only**: never use raw Tailwind palette classes (`gray-*`, `blue-*`, `red-*`, …) in frontend code. Use theme tokens: `bg-background`, `bg-muted`, `text-foreground`, `text-muted-foreground`, `text-destructive`, etc. Page background is `bg-muted`; surfaces are `Card`s.
+- **Data fetching via TanStack Query + axios**: in frontend code, fetch server data with `@tanstack/react-query` (`useQuery`/`useMutation`), not bare `fetch` or `useEffect` request loops. Use `axios` as the HTTP client inside query/mutation functions, and pass TanStack's `signal` to axios so requests cancel on unmount. The `QueryClientProvider` is wired up in `frontend/src/main.tsx`. (Better Auth flows still go through the auth client, not axios.)
 
 ## Where we are in the plan
 

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
 import {
   Card,
   CardContent,
@@ -25,44 +26,28 @@ interface UserRow {
   createdAt: string;
 }
 
-type LoadState =
-  | { status: "loading" }
-  | { status: "error"; message: string }
-  | { status: "ready"; users: UserRow[] };
-
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
   month: "short",
   day: "numeric",
 });
 
+async function fetchUsers(signal: AbortSignal): Promise<UserRow[]> {
+  const { data } = await axios.get<{ users: UserRow[] }>("/api/users", {
+    signal,
+  });
+  return data.users;
+}
+
 export default function UsersPage() {
-  const [state, setState] = useState<LoadState>({ status: "loading" });
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    async function load() {
-      try {
-        const res = await fetch("/api/users", { signal: controller.signal });
-        if (!res.ok) {
-          throw new Error(`Request failed with status ${res.status}`);
-        }
-        const data: { users: UserRow[] } = await res.json();
-        setState({ status: "ready", users: data.users });
-      } catch (err) {
-        if (controller.signal.aborted) return;
-        setState({
-          status: "error",
-          message:
-            err instanceof Error ? err.message : "Unable to load users.",
-        });
-      }
-    }
-
-    load();
-    return () => controller.abort();
-  }, []);
+  const {
+    data: users,
+    isPending,
+    isError,
+  } = useQuery({
+    queryKey: ["users"],
+    queryFn: ({ signal }) => fetchUsers(signal),
+  });
 
   return (
     <section className="space-y-6">
@@ -81,56 +66,42 @@ export default function UsersPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <UsersContent state={state} />
+          {isPending ? (
+            <p className="text-sm text-muted-foreground">Loading users…</p>
+          ) : isError ? (
+            <p role="alert" className="text-sm text-destructive">
+              Unable to load users.
+            </p>
+          ) : users.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No users yet.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Joined</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {users.map((user) => (
+                  <TableRow key={user.id}>
+                    <TableCell className="font-medium">{user.name}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {user.email}
+                    </TableCell>
+                    <TableCell className="capitalize">{user.role}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {dateFormatter.format(new Date(user.createdAt))}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </section>
-  );
-}
-
-function UsersContent({ state }: { state: LoadState }) {
-  if (state.status === "loading") {
-    return (
-      <p className="text-sm text-muted-foreground">Loading users…</p>
-    );
-  }
-
-  if (state.status === "error") {
-    return (
-      <p role="alert" className="text-sm text-destructive">
-        {state.message}
-      </p>
-    );
-  }
-
-  if (state.users.length === 0) {
-    return <p className="text-sm text-muted-foreground">No users yet.</p>;
-  }
-
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Name</TableHead>
-          <TableHead>Email</TableHead>
-          <TableHead>Role</TableHead>
-          <TableHead>Joined</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {state.users.map((user) => (
-          <TableRow key={user.id}>
-            <TableCell className="font-medium">{user.name}</TableCell>
-            <TableCell className="text-muted-foreground">
-              {user.email}
-            </TableCell>
-            <TableCell className="capitalize">{user.role}</TableCell>
-            <TableCell className="text-muted-foreground">
-              {dateFormatter.format(new Date(user.createdAt))}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
   );
 }
