@@ -15,7 +15,9 @@
       "Bash(ls components *)",
       "Bash(bunx --bun shadcn@latest add table)",
       "Bash(bun add *)",
-      "Bash(bunx --bun shadcn@latest add skeleton)"
+      "Bash(bunx --bun shadcn@latest add skeleton)",
+      "Bash(bun test *)",
+      "Bash(bun remove *)"
     ]
   },
   "enabledPlugins": {

@@ -73,6 +73,16 @@ Playwright drives the full stack (frontend + backend + DB) from the **repo root*
 
 **Always use the `playwright-e2e-author` agent to write, add, or expand e2e tests** — launch it via the Agent tool (`subagent_type: "playwright-e2e-author"`). Do not hand-write Playwright specs inline. The agent owns the authoritative harness details (test DB on port 5433, isolated ports, `globalSetup` seeding, `.env.test` credentials, run commands) and the project's testing conventions; its definition lives at `.claude/agents/playwright-e2e-author.md`. Reach for it both when the user explicitly asks for tests and proactively after a user-facing flow is implemented and needs coverage.
 
+## Testing (component)
+
+Frontend component/unit tests run under **Vitest** with **jsdom** and **React Testing Library**, inside `frontend/` (separate from the root-level Playwright e2e suite). Specs are colocated with the code as `src/**/*.test.tsx`.
+
+- **Run** (from `frontend/`): `bun run test` (one-shot, `vitest run`) or `bun run test:watch` (watch mode). Typecheck specs with `bun run typecheck:test`.
+- **Config**: `frontend/vitest.config.ts` (jsdom env, React plugin, `@` alias, `setupFiles`). `frontend/vitest.setup.ts` registers jest-dom matchers (`@testing-library/jest-dom/vitest`) and runs `cleanup()` after each test.
+- **TS**: specs and `src/test/**` are excluded from `tsconfig.app.json` and type-checked via `tsconfig.test.json` instead, so test-only deps stay out of the app build.
+- **Shared render helper**: use `renderWithClient(ui)` from `src/test/render.tsx` — it wraps the tree in a fresh `QueryClient` (with `retry: false` so error states surface immediately). It also imports the jest-dom matcher augmentation, so importing it keeps `toBeInTheDocument` etc. typed even in editors that don't load `vitest.setup.ts`.
+- **Conventions**: user-centric queries (`getByRole`/`getByText`), `findBy*` to await query results, and jest-dom matchers. Mock network calls with `vi.spyOn(axios, ...)` rather than hitting a real backend — full-stack flows belong in the Playwright e2e suite. `UsersPage.test.tsx` is the reference example (loading/success/empty/error states).
+
 ## Fetching up-to-date documentation
 
 The **context7** MCP server is configured for this project. Use it whenever you need current docs for any library, framework, SDK, API, or CLI tool — including ones you think you know (Bun, Express, React, Prisma, Tailwind, Anthropic SDK, etc.). Your training data may lag behind upstream changes.
