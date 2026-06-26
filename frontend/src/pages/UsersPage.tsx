@@ -7,31 +7,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
-
-type UserRole = "admin" | "agent";
-
-interface UserRow {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  createdAt: string;
-}
-
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-});
+import CreateUserDialog from "@/components/CreateUserDialog";
+import UsersTable, { type UserRow } from "@/components/UsersTable";
 
 async function fetchUsers(signal: AbortSignal): Promise<UserRow[]> {
   const { data } = await axios.get<{ users: UserRow[] }>("/api/users", {
@@ -52,11 +29,14 @@ export default function UsersPage() {
 
   return (
     <section className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Helpdesk staff with access to this workspace.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Helpdesk staff with access to this workspace.
+          </p>
+        </div>
+        <CreateUserDialog />
       </div>
 
       <Card>
@@ -68,34 +48,7 @@ export default function UsersPage() {
         </CardHeader>
         <CardContent>
           {isPending ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Joined</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}>
-                    <TableCell>
-                      <Skeleton className="h-4 w-32" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-48" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-16" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-24" />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <UsersTable isPending />
           ) : isError ? (
             <p role="alert" className="text-sm text-destructive">
               Unable to load users.
@@ -103,30 +56,7 @@ export default function UsersPage() {
           ) : users.length === 0 ? (
             <p className="text-sm text-muted-foreground">No users yet.</p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Joined</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell className="font-medium">{user.name}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {user.email}
-                    </TableCell>
-                    <TableCell className="capitalize">{user.role}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {dateFormatter.format(new Date(user.createdAt))}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <UsersTable users={users} />
           )}
         </CardContent>
       </Card>

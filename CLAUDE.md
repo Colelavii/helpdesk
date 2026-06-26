@@ -24,8 +24,11 @@ Read these before making non-trivial changes; they hold decisions that aren't ye
 ```
 backend/             Express + TypeScript, run on Bun
 frontend/            React + TypeScript + React Router, Vite dev server
+core/                Shared TypeScript consumed by both (Zod schemas + inferred types)
 docker-compose.yml   Local PostgreSQL for development
 ```
+
+`backend` and `frontend` are independent Bun installs (each has its own `bun.lock` / `node_modules`), not a workspace. `core` is published as `@helpdesk/core` and wired into both via a `file:../core` dependency (Bun symlinks it). It exports `.ts` source directly — both Bun and Vite transpile it on the fly, so there's no build step.
 
 The frontend dev server proxies `/api/*` to the backend at `http://localhost:3001`, so frontend code calls relative paths (e.g. `fetch("/api/hello")`) with no CORS setup.
 
@@ -102,6 +105,7 @@ Don't use it for: business-logic debugging, refactoring, code review, or general
 - **ESM only**: both backend and frontend are `"type": "module"`. Use `import` syntax, not `require`.
 - **TypeScript strict**: don't loosen `strict` or disable rules to make code compile. Fix the types.
 - **Validate at boundaries**: validate request bodies with Zod (or equivalent) at API handlers. Trust internal types between modules.
+- **Shared Zod schemas live in `core`**: any schema (and its inferred type) used by both the client and the server must be defined once in `@helpdesk/core` (`core/src/schemas/*.ts`, re-exported from `core/src/index.ts`) and imported from there in both — never copy-paste a schema into `backend` and `frontend`. The server validates request bodies with it; the client drives form validation off the *same* schema (e.g. `zodResolver(createUserSchema)`) and derives form value types from the exported `z.infer` type (e.g. `CreateUserInput`). `createUserSchema` is the reference example. Keep `zod` versions aligned across `core`, `backend`, and `frontend`. A schema used by only one side can stay local to that package.
 - **API routes are prefixed `/api`**: anything served by Express that the frontend fetches lives under `/api/*` so the Vite proxy routes it correctly. Health check is `/api/health`.
 - **No comments explaining *what***: identifiers should be self-describing. Only comment the non-obvious *why* (a constraint, a workaround, an invariant).
 - **UI via shadcn/ui**: theme is `radix-vega` with `neutral` base color (`frontend/components.json`) — Radix primitives, not Base UI; don't change this without asking. Add components with `bunx --bun shadcn@latest add <component>`. Note the v4 CLI quirks: `--preset` takes a bare style name (`vega`), base is `-b radix`, and `-d/--defaults` silently forces the Next.js template.

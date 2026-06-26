@@ -16,9 +16,11 @@
     "db:seed": "bun run src/seed.ts"
   },
   "dependencies": {
+    "@helpdesk/core": "file:../core",
     "@prisma/client": "6",
     "better-auth": "^1.6.13",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bun": "latest",
