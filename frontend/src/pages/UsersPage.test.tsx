@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import axios from "axios";
 import UsersPage from "./UsersPage";
 import { renderWithClient } from "../test/render";
@@ -106,5 +107,60 @@ describe("UsersPage", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Unable to load users.");
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+});
+
+describe("UsersPage — create user dialog", () => {
+  // Render with the list resolved so the page is settled before we interact
+  // with the dialog (the "New user" trigger lives in the header regardless).
+  async function renderSettledPage() {
+    mockGet().mockResolvedValue({ data: { users: sampleUsers } });
+    const view = renderWithClient(<UsersPage />);
+    await screen.findByText("Ada Admin");
+    return view;
+  }
+
+  it("does not show the dialog until the button is clicked", async () => {
+    await renderSettledPage();
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("shows the dialog when the New user button is clicked", async () => {
+    const user = userEvent.setup();
+    await renderSettledPage();
+
+    await user.click(screen.getByRole("button", { name: "New user" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByRole("heading", { name: "Create user" }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides the dialog when the Escape key is pressed", async () => {
+    const user = userEvent.setup();
+    await renderSettledPage();
+
+    await user.click(screen.getByRole("button", { name: "New user" }));
+    await screen.findByRole("dialog");
+
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("hides the dialog when clicking outside it (the overlay)", async () => {
+    const user = userEvent.setup();
+    await renderSettledPage();
+
+    await user.click(screen.getByRole("button", { name: "New user" }));
+    await screen.findByRole("dialog");
+
+    const overlay = document.querySelector('[data-slot="dialog-overlay"]');
+    expect(overlay).not.toBeNull();
+    await user.click(overlay as Element);
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
