@@ -1,4 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
+import { Role } from "@helpdesk/core";
 import { signOut, useSession } from "../lib/auth-client";
 import { Button } from "@/components/ui/button";
 
@@ -26,7 +27,7 @@ export default function NavBar() {
         >
           Tickets
         </Link>
-        {session?.user.role === "admin" && (
+        {session?.user.role === Role.admin && (
           <Link
             to="/users"
             className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"

@@ -6,15 +6,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Role } from "@helpdesk/core";
 import { Skeleton } from "@/components/ui/skeleton";
-
-export type UserRole = "admin" | "agent";
+import UserFormDialog from "@/components/UserFormDialog";
+import DeleteUserDialog from "@/components/DeleteUserDialog";
 
 export interface UserRow {
   id: string;
   name: string;
   email: string;
-  role: UserRole;
+  role: Role;
   createdAt: string;
 }
 
@@ -41,6 +42,9 @@ export default function UsersTable({
           <TableHead>Email</TableHead>
           <TableHead>Role</TableHead>
           <TableHead>Joined</TableHead>
+          <TableHead className="w-0">
+            <span className="sr-only">Actions</span>
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -59,6 +63,9 @@ export default function UsersTable({
                 <TableCell>
                   <Skeleton className="h-4 w-24" />
                 </TableCell>
+                <TableCell>
+                  <Skeleton className="size-8" />
+                </TableCell>
               </TableRow>
             ))
           : users?.map((user) => (
@@ -70,6 +77,14 @@ export default function UsersTable({
                 <TableCell className="capitalize">{user.role}</TableCell>
                 <TableCell className="text-muted-foreground">
                   {dateFormatter.format(new Date(user.createdAt))}
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1">
+                    <UserFormDialog mode="edit" user={user} />
+                    {user.role !== Role.admin && (
+                      <DeleteUserDialog user={user} />
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

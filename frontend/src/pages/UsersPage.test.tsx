@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axios from "axios";
+import { Role } from "@helpdesk/core";
 import UsersPage from "./UsersPage";
 import { renderWithClient } from "../test/render";
 
@@ -18,14 +19,14 @@ const sampleUsers = [
     id: "1",
     name: "Ada Admin",
     email: "ada@example.com",
-    role: "admin",
+    role: Role.admin,
     createdAt: "2024-01-15T10:00:00.000Z",
   },
   {
     id: "2",
     name: "Glen Agent",
     email: "glen@example.com",
-    role: "agent",
+    role: Role.agent,
     createdAt: "2024-03-20T10:00:00.000Z",
   },
 ];
@@ -72,8 +73,8 @@ describe("UsersPage", () => {
     expect(screen.getByText("glen@example.com")).toBeInTheDocument();
 
     // Roles are rendered verbatim (the capitalize is CSS-only).
-    expect(screen.getByText("admin")).toBeInTheDocument();
-    expect(screen.getByText("agent")).toBeInTheDocument();
+    expect(screen.getByText(Role.admin)).toBeInTheDocument();
+    expect(screen.getByText(Role.agent)).toBeInTheDocument();
 
     // The join date is formatted through the same Intl formatter.
     expect(
@@ -87,6 +88,21 @@ describe("UsersPage", () => {
     const body = rowGroups[rowGroups.length - 1];
     expect(within(body).getAllByRole("row")).toHaveLength(2);
     expect(document.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(0);
+  });
+
+  it("offers delete only for non-admin users", async () => {
+    mockGet().mockResolvedValue({ data: { users: sampleUsers } });
+
+    renderWithClient(<UsersPage />);
+
+    // Agents get a delete button; admins are protected and get none.
+    expect(await screen.findByText("Glen Agent")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Delete Glen Agent" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Delete Ada Admin" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the empty state when no users exist", async () => {

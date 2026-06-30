@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
+import { APIError } from "better-auth/api";
 import { prisma } from "./prisma.ts";
 
 // Comma-separated list of browser origins allowed to call the auth API
@@ -22,7 +23,28 @@ export const auth = betterAuth({
   user: {
     additionalFields: {
       // input: false — role can't be set via the API; only assigned server-side (e.g. the seed).
-      role: { type: ["admin", "agent"], required: false, defaultValue: "agent", input: false },
+      role: { type: ["admin", "agent"], required: true, defaultValue: "agent", input: false },
+    },
+  },
+  databaseHooks: {
+    session: {
+      create: {
+        // Block sign-in for soft-deleted users: the Prisma adapter would
+        // otherwise happily authenticate a row that still exists. Mirrors
+        // Better Auth's own banUser enforcement. deletedAt is queried directly
+        // (not a Better Auth field) so it stays out of the session/user object.
+        before: async (session) => {
+          const user = await prisma.user.findUnique({
+            where: { id: session.userId },
+            select: { deletedAt: true },
+          });
+          if (user?.deletedAt) {
+            throw new APIError("FORBIDDEN", {
+              message: "This account has been deactivated.",
+            });
+          }
+        },
+      },
     },
   },
   rateLimit: {

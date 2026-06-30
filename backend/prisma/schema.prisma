@@ -26,6 +26,9 @@ model User {
   role          Role    @default(agent)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  // Soft delete: non-null means the user is deactivated (hidden from lists,
+  // sessions revoked, sign-in blocked). Unknown to Better Auth — managed by us.
+  deletedAt     DateTime?
   sessions      Session[]
   accounts      Account[]
 
