@@ -10,8 +10,19 @@ metadata:
 - `GET /api/me` — requireAuth, returns `{ user: { email, role, ... } }`, 401 if no session
 - `POST /api/auth/*` — Better Auth handler (sign-in, sign-out, session management)
 
+## Webhook routes
+- `POST /api/webhooks/inbound-email` — guarded by `requireInboundSecret` middleware (X-Inbound-Secret header). NOT session-authenticated.
+  - Returns 201 `{ ticketId, status: "created" }` for new tickets
+  - Returns 200 `{ ticketId, status: "threaded" }` for replies (matched via inReplyTo or references array)
+  - Returns 200 `{ ticketId, status: "deduped" }` for duplicate messageId
+  - Returns 400 `{ error: <flattened Zod error> }` for validation failures
+  - Returns 401 `{ error: "Unauthorized" }` for missing/wrong secret
+  - Secret in `.env.test`: `INBOUND_EMAIL_SECRET=e2e-test-inbound-secret`
+  - Test file: `e2e/inbound-email.spec.ts`
+
 ## Routes that do NOT exist yet
 - `GET /api/users` — referenced in implementation plan, NOT implemented. Phase 2 placeholder only (/users page is a heading-only stub). Cannot test server-side 403 for this route yet.
+- `GET /api/tickets/:id` — not yet implemented. Cannot assert ticket DB state (reopen-on-reply behavior) from e2e tests until this exists.
 
 ## Auth middleware
 - `requireAuth` (`backend/src/require-auth.ts`): resolves session, sets req.user/req.session, 401 if missing

@@ -1,9 +1,32 @@
 import { defineConfig, devices } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Load backend/.env.test into the Playwright runner process so specs can read
+// vars like INBOUND_EMAIL_SECRET and API_BASE_URL from process.env.
+// The child processes (backend, frontend webServer) already receive it via
+// `bun --env-file=.env.test`; this covers the runner itself (which runs under
+// Node, not Bun, and therefore does not get --env-file auto-loading).
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const envTestPath = resolve(__dirname, "backend/.env.test");
+for (const line of readFileSync(envTestPath, "utf-8").split("\n")) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith("#")) continue;
+  const eq = trimmed.indexOf("=");
+  if (eq === -1) continue;
+  const key = trimmed.slice(0, eq).trim();
+  const value = trimmed.slice(eq + 1).trim();
+  // Never overwrite a variable the caller already set in their shell environment.
+  if (!(key in process.env)) process.env[key] = value;
+}
 
 // Dedicated test ports so the e2e stack can run alongside `bun run dev`
 // (dev uses 5173 / 3001 / 5432; test uses 5273 / 3101 / 5433).
 const FRONTEND_URL = "http://localhost:5273";
-const BACKEND_URL = "http://localhost:3101";
+// BACKEND_URL is now authoritative from the env file; fall back to the
+// hard-coded value only if the env file somehow lacked it.
+const BACKEND_URL = process.env.API_BASE_URL ?? "http://localhost:3101";
 
 export default defineConfig({
   testDir: "./e2e",
