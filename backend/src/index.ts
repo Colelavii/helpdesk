@@ -3,6 +3,7 @@ import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth.ts";
 import { requireAuth } from "./require-auth.ts";
 import { usersRouter } from "./routes/users.ts";
+import { webhooksRouter } from "./routes/webhooks.ts";
 
 const app = express();
 const port = Number(process.env.PORT) || 3001;
@@ -21,6 +22,7 @@ app.get("/api/me", requireAuth, (req: Request, res: Response) => {
 });
 
 app.use("/api/users", usersRouter);
+app.use("/api/webhooks", webhooksRouter);
 
 app.listen(port, () => {
   console.log(`Backend listening on http://localhost:${port}`);

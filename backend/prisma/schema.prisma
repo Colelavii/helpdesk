@@ -16,6 +16,23 @@ enum Role {
   agent
 }
 
+enum TicketStatus {
+  open
+  resolved
+  closed
+}
+
+enum TicketCategory {
+  general
+  technical
+  refund
+}
+
+enum MessageDirection {
+  inbound
+  outbound
+}
+
 // Better Auth models. Password lives on Account.password, not User.
 model User {
   id            String    @id
@@ -31,6 +48,8 @@ model User {
   deletedAt     DateTime?
   sessions      Session[]
   accounts      Account[]
+  assignedTickets Ticket[]
+  sentMessages    Message[]
 
   @@unique([email])
   @@map("user")
@@ -82,5 +101,48 @@ model Verification {
 
   @@index([identifier])
   @@map("verification")
+}
+
+// A support request. Created from an inbound email (see the inbound-email
+// webhook) or, later, manually. The requester is the student emailing in — not
+// a User (Users are staff). Category is left unset at intake; AI will set it.
+model Ticket {
+  id             Int             @id @default(autoincrement())
+  subject        String
+  requesterEmail String
+  requesterName  String
+  status         TicketStatus    @default(open)
+  category       TicketCategory?
+  assignedToId   String?
+  assignedTo     User?           @relation(fields: [assignedToId], references: [id])
+  messages       Message[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([status])
+  @@map("ticket")
+}
+
+// One email in a ticket thread. `messageId` is the email's Message-Id; it's
+// unique so retries don't duplicate, and `inReplyTo`/`references` thread replies
+// onto an existing ticket. `sentBy` is the agent for outbound messages, null for
+// inbound (student) ones.
+model Message {
+  id         Int              @id @default(autoincrement())
+  ticketId   Int
+  ticket     Ticket           @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  direction  MessageDirection
+  fromEmail  String
+  fromName   String
+  body       String
+  messageId  String?          @unique
+  inReplyTo  String?
+  references String[]
+  sentById   String?
+  sentBy     User?            @relation(fields: [sentById], references: [id])
+  createdAt  DateTime         @default(now())
+
+  @@index([ticketId])
+  @@map("message")
 }
 

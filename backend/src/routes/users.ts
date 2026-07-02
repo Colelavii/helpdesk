@@ -1,10 +1,10 @@
 import { Router, type Request, type Response } from "express";
-import { z } from "zod";
 import { createUserSchema, updateUserSchema } from "@helpdesk/core";
 import { auth } from "../auth.ts";
 import { requireAuth } from "../require-auth.ts";
 import { requireAdmin } from "../require-admin.ts";
 import { prisma } from "../prisma.ts";
+import { parseBody } from "../parse-body.ts";
 
 export const usersRouter = Router();
 
@@ -27,12 +27,9 @@ usersRouter.get("/", async (_req: Request, res: Response) => {
 });
 
 usersRouter.post("/", async (req: Request, res: Response) => {
-  const parsed = createUserSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: z.flattenError(parsed.error) });
-    return;
-  }
-  const { name, email, password } = parsed.data;
+  const data = parseBody(createUserSchema, req.body, res);
+  if (!data) return;
+  const { name, email, password } = data;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -73,13 +70,10 @@ usersRouter.post("/", async (req: Request, res: Response) => {
 usersRouter.patch(
   "/:id",
   async (req: Request<{ id: string }>, res: Response) => {
-    const parsed = updateUserSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: z.flattenError(parsed.error) });
-      return;
-    }
+    const data = parseBody(updateUserSchema, req.body, res);
+    if (!data) return;
     const { id } = req.params;
-    const { name, email, password } = parsed.data;
+    const { name, email, password } = data;
 
     const existing = await prisma.user.findUnique({ where: { id } });
     if (!existing) {
