@@ -6,3 +6,4 @@
 - [API endpoints](api-endpoints.md) — which backend routes exist and what auth they require
 - [Users page selectors](users-page-selectors.md) — dialog scoping, row-by-email helper, unique name/email pattern, CardTitle gotcha, AlertDialog role
 - [Env loading in runner](env-loading-in-runner.md) — how backend/.env.test is parsed into process.env for specs; why dotenv isn't used; pattern for reading env vars in spec code
+- [Tickets page selectors](tickets-page-selectors.md) — selectors for /tickets UI, GET /api/tickets shape/ordering, webhook seeding via authenticated `request`, relative-ordering assertion pattern

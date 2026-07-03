@@ -72,13 +72,15 @@ Frontend (`frontend/`):
 
 ## Testing (e2e)
 
-Playwright drives the full stack (frontend + backend + DB) from the **repo root** (`playwright.config.ts`, root `package.json`, specs in `e2e/`). No tests are written yet — only the harness.
+Playwright drives the full stack (frontend + backend + DB) from the **repo root** (`playwright.config.ts`, root `package.json`, specs in `e2e/`).
 
-**Always use the `playwright-e2e-author` agent to write, add, or expand e2e tests** — launch it via the Agent tool (`subagent_type: "playwright-e2e-author"`). Do not hand-write Playwright specs inline. The agent owns the authoritative harness details (test DB on port 5433, isolated ports, `globalSetup` seeding, `.env.test` credentials, run commands) and the project's testing conventions; its definition lives at `.claude/agents/playwright-e2e-author.md`. Reach for it both when the user explicitly asks for tests and proactively after a user-facing flow is implemented and needs coverage.
+**Prefer component tests (Vitest) as the default; use e2e only when necessary.** Component tests are fast and cover most behavior — rendering, UI states, validation, and mutations with the network mocked. Reserve e2e for cases that genuinely need the real full stack: auth/session flows, server-side enforcement (route guards, status codes), or a critical cross-boundary path (e.g. the inbound-email webhook, ticket intake). Do **not** add e2e *proactively* just because a user-facing flow shipped — cover it with component tests instead, and only reach for e2e when a case truly warrants it or the user asks.
+
+**When you do write e2e, always use the `playwright-e2e-author` agent** — launch it via the Agent tool (`subagent_type: "playwright-e2e-author"`); never hand-write Playwright specs inline. The agent owns the authoritative harness details (test DB on port 5433, isolated ports, `globalSetup` seeding, `.env.test` credentials, run commands) and the project's testing conventions; its definition lives at `.claude/agents/playwright-e2e-author.md`.
 
 ## Testing (component)
 
-Frontend component/unit tests run under **Vitest** with **jsdom** and **React Testing Library**, inside `frontend/` (separate from the root-level Playwright e2e suite). Specs are colocated with the code as `src/**/*.test.tsx`.
+Frontend component/unit tests run under **Vitest** with **jsdom** and **React Testing Library**, inside `frontend/` (separate from the root-level Playwright e2e suite). Specs are colocated with the code as `src/**/*.test.tsx`. **This is the default test layer — reach for it first when adding coverage for new work.**
 
 - **Run** (from `frontend/`): `bun run test` (one-shot, `vitest run`) or `bun run test:watch` (watch mode). Typecheck specs with `bun run typecheck:test`.
 - **Config**: `frontend/vitest.config.ts` (jsdom env, React plugin, `@` alias, `setupFiles`). `frontend/vitest.setup.ts` registers jest-dom matchers (`@testing-library/jest-dom/vitest`) and runs `cleanup()` after each test.

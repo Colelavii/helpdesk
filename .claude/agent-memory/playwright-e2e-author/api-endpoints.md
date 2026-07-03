@@ -20,9 +20,14 @@ metadata:
   - Secret in `.env.test`: `INBOUND_EMAIL_SECRET=e2e-test-inbound-secret`
   - Test file: `e2e/inbound-email.spec.ts`
 
+## Ticket routes (Phase 2+)
+- `GET /api/tickets` — requireAuth (any signed-in staff, NOT admin-only). Returns `{ tickets: [...] }`, ordered `createdAt DESC` (newest first).
+  - Each ticket: `{ id: number, subject: string, requesterEmail: string, requesterName: string, status: string, category: string | null, createdAt: string, updatedAt: string }`
+  - 401 with no session, 200 with any valid session (admin or agent)
+  - Tested in `e2e/tickets.spec.ts`
+
 ## Routes that do NOT exist yet
-- `GET /api/users` — referenced in implementation plan, NOT implemented. Phase 2 placeholder only (/users page is a heading-only stub). Cannot test server-side 403 for this route yet.
-- `GET /api/tickets/:id` — not yet implemented. Cannot assert ticket DB state (reopen-on-reply behavior) from e2e tests until this exists.
+- `GET /api/tickets/:id` — not yet implemented. Cannot assert per-ticket DB state (reopen-on-reply behavior) from e2e tests until this exists.
 
 ## Auth middleware
 - `requireAuth` (`backend/src/require-auth.ts`): resolves session, sets req.user/req.session, 401 if missing

@@ -3,6 +3,7 @@ import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth.ts";
 import { requireAuth } from "./require-auth.ts";
 import { usersRouter } from "./routes/users.ts";
+import { ticketsRouter } from "./routes/tickets.ts";
 import { webhooksRouter } from "./routes/webhooks.ts";
 
 const app = express();
@@ -22,6 +23,7 @@ app.get("/api/me", requireAuth, (req: Request, res: Response) => {
 });
 
 app.use("/api/users", usersRouter);
+app.use("/api/tickets", ticketsRouter);
 app.use("/api/webhooks", webhooksRouter);
 
 app.listen(port, () => {

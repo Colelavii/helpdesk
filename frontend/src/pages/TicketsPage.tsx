@@ -1,3 +1,5 @@
+import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
 import {
   Card,
   CardContent,
@@ -5,8 +7,25 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import TicketsTable, { type TicketRow } from "@/components/TicketsTable";
+
+async function fetchTickets(signal: AbortSignal): Promise<TicketRow[]> {
+  const { data } = await axios.get<{ tickets: TicketRow[] }>("/api/tickets", {
+    signal,
+  });
+  return data.tickets;
+}
 
 export default function TicketsPage() {
+  const {
+    data: tickets,
+    isPending,
+    isError,
+  } = useQuery({
+    queryKey: ["tickets"],
+    queryFn: ({ signal }) => fetchTickets(signal),
+  });
+
   return (
     <section className="space-y-6">
       <div>
@@ -18,13 +37,23 @@ export default function TicketsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>No tickets yet</CardTitle>
+          <CardTitle>Support requests</CardTitle>
           <CardDescription>
-            The ticket list will appear here once tickets start arriving.
+            Incoming tickets, newest first.
           </CardDescription>
         </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Placeholder for the ticket list.
+        <CardContent>
+          {isPending ? (
+            <TicketsTable isPending />
+          ) : isError ? (
+            <p role="alert" className="text-sm text-destructive">
+              Unable to load tickets.
+            </p>
+          ) : tickets.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No tickets yet.</p>
+          ) : (
+            <TicketsTable tickets={tickets} />
+          )}
         </CardContent>
       </Card>
     </section>

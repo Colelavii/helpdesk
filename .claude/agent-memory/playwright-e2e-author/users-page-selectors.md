@@ -7,7 +7,9 @@ metadata:
 
 ## CardTitle is a <div>, not a heading
 
-`CardTitle` in `frontend/src/components/ui/card.tsx` renders as a `<div data-slot="card-title">`, not an `<h*>` element. Use `page.getByText("Team members")` not `getByRole("heading", { name: "Team members" })`.
+`CardTitle` in `frontend/src/components/ui/card.tsx` renders as a `<div data-slot="card-title">`, not an `<h*>` element. Use `page.getByText("...", { exact: true })` not `getByRole("heading", { name: "..." })`.
+
+**Always use `{ exact: true }` on `getByText` for CardTitle values.** Without it, a card title like "Support requests" matches descriptive text like "Student support requests assigned to your team." and triggers a strict-mode violation (2 elements found). Confirmed on the Tickets page: `getByText("Support requests")` fails; `getByText("Support requests", { exact: true })` passes. See [[tickets-page-selectors]].
 
 ## Strict-mode: scope inputs to the open dialog
 
