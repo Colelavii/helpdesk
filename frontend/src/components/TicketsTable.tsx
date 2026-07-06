@@ -1,4 +1,13 @@
 import {
+  type ColumnDef,
+  type OnChangeFn,
+  type SortingState,
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+} from "@tanstack/react-table";
+import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
+import {
   Table,
   TableBody,
   TableCell,
@@ -7,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import type { TicketStatus, TicketCategory } from "@helpdesk/core";
 
 export interface TicketRow {
@@ -27,23 +37,114 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 
 const SKELETON_ROWS = 5;
 
+// Column ids match `ticketSortFields` in @helpdesk/core so a header's id is
+// exactly the `sort` param the server orders by.
+const columns: ColumnDef<TicketRow>[] = [
+  {
+    id: "subject",
+    accessorKey: "subject",
+    header: "Subject",
+    cell: ({ row }) => (
+      <span className="font-medium">{row.original.subject}</span>
+    ),
+  },
+  {
+    id: "requesterName",
+    header: "Requester",
+    cell: ({ row }) => (
+      <span className="text-muted-foreground">
+        {row.original.requesterName}{" "}
+        <span className="text-xs">&lt;{row.original.requesterEmail}&gt;</span>
+      </span>
+    ),
+  },
+  {
+    id: "status",
+    accessorKey: "status",
+    header: "Status",
+    cell: ({ row }) => <span className="capitalize">{row.original.status}</span>,
+  },
+  {
+    id: "category",
+    accessorKey: "category",
+    header: "Category",
+    cell: ({ row }) => (
+      <span className="capitalize text-muted-foreground">
+        {row.original.category ?? "—"}
+      </span>
+    ),
+  },
+  {
+    id: "createdAt",
+    accessorKey: "createdAt",
+    header: "Received",
+    cell: ({ row }) => (
+      <span className="text-muted-foreground">
+        {dateFormatter.format(new Date(row.original.createdAt))}
+      </span>
+    ),
+  },
+];
+
+const EMPTY: TicketRow[] = [];
+
 export default function TicketsTable({
   tickets,
   isPending = false,
+  sorting,
+  onSortingChange,
 }: {
   tickets?: TicketRow[];
   isPending?: boolean;
+  sorting: SortingState;
+  onSortingChange: OnChangeFn<SortingState>;
 }) {
+  const table = useReactTable({
+    data: tickets ?? EMPTY,
+    columns,
+    state: { sorting },
+    onSortingChange,
+    manualSorting: true, // the server does the sorting
+    getCoreRowModel: getCoreRowModel(),
+  });
+
   return (
     <Table>
       <TableHeader>
-        <TableRow>
-          <TableHead>Subject</TableHead>
-          <TableHead>Requester</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Category</TableHead>
-          <TableHead>Received</TableHead>
-        </TableRow>
+        {table.getHeaderGroups().map((headerGroup) => (
+          <TableRow key={headerGroup.id}>
+            {headerGroup.headers.map((header) => {
+              const sorted = header.column.getIsSorted();
+              const Icon =
+                sorted === "asc"
+                  ? ArrowUp
+                  : sorted === "desc"
+                    ? ArrowDown
+                    : ChevronsUpDown;
+              return (
+                <TableHead key={header.id}>
+                  <button
+                    type="button"
+                    onClick={header.column.getToggleSortingHandler()}
+                    className="-ml-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={`Sort by ${String(header.column.columnDef.header)}`}
+                  >
+                    {flexRender(
+                      header.column.columnDef.header,
+                      header.getContext(),
+                    )}
+                    <Icon
+                      className={cn(
+                        "size-3.5",
+                        sorted ? "text-foreground" : "text-muted-foreground/60",
+                      )}
+                    />
+                  </button>
+                </TableHead>
+              );
+            })}
+          </TableRow>
+        ))}
       </TableHeader>
       <TableBody>
         {isPending
@@ -66,20 +167,13 @@ export default function TicketsTable({
                 </TableCell>
               </TableRow>
             ))
-          : tickets?.map((ticket) => (
-              <TableRow key={ticket.id}>
-                <TableCell className="font-medium">{ticket.subject}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {ticket.requesterName}{" "}
-                  <span className="text-xs">&lt;{ticket.requesterEmail}&gt;</span>
-                </TableCell>
-                <TableCell className="capitalize">{ticket.status}</TableCell>
-                <TableCell className="capitalize text-muted-foreground">
-                  {ticket.category ?? "—"}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {dateFormatter.format(new Date(ticket.createdAt))}
-                </TableCell>
+          : table.getRowModel().rows.map((row) => (
+              <TableRow key={row.id}>
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell key={cell.id}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ))}
               </TableRow>
             ))}
       </TableBody>

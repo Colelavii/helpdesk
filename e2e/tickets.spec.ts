@@ -11,7 +11,7 @@
  * Admin session: loaded from .auth/admin.json (project-level storageState)
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect, type APIRequestContext } from "@playwright/test";
 
 // Guard: both vars are loaded into the runner process by playwright.config.ts
 // which reads backend/.env.test before the suite starts. Missing values mean
@@ -153,6 +153,150 @@ test.describe("GET /api/tickets — shape and ordering", () => {
 
     // The newer ticket (id2) must appear before the older one (id1).
     expect(idx2).toBeLessThan(idx1);
+  });
+});
+
+// ─── API: server-side sorting ─────────────────────────────────────────────────
+
+test.describe("GET /api/tickets — server-side sorting", () => {
+  // Seed three tickets whose subjects start with a unique run token so we can
+  // filter the full response down to just this test's rows before asserting
+  // order. The token is constructed from the current timestamp plus counter so
+  // it is unique across reruns on the persistent test DB.
+  //
+  // Subjects: "<token> AAA…", "<token> MMM…", "<token> ZZZ…"
+  // Alphabetically: AAA < MMM < ZZZ, so asc order is [AAA, MMM, ZZZ].
+
+  async function seedThreeTickets(request: APIRequestContext) {
+    const token = `SORT-${uniqueSuffix()}`;
+    const subjects = [
+      `${token} AAA Alpha ticket`,
+      `${token} MMM Middle ticket`,
+      `${token} ZZZ Zeta ticket`,
+    ] as const;
+
+    const ids: number[] = [];
+    for (const [i, subject] of subjects.entries()) {
+      const suffix = uniqueSuffix();
+      const res = await request.post(WEBHOOK, {
+        headers: { "x-inbound-secret": SECRET! },
+        data: {
+          fromEmail: `sort-student-${suffix}@example.com`,
+          fromName: `Sort Student ${i}`,
+          subject,
+          body: "Sorting test email.",
+          messageId: `<sort-seed-${suffix}@mail.example.com>`,
+        },
+      });
+      expect(res.status()).toBe(201);
+      const { ticketId } = await res.json() as { ticketId: number; status: string };
+      ids.push(ticketId);
+    }
+
+    return { token, subjectAAA: subjects[0], subjectMMM: subjects[1], subjectZZZ: subjects[2], ids };
+  }
+
+  test("sort=subject&order=asc → seeded tickets appear A→Z by subject", async ({
+    request,
+  }) => {
+    const { ids, token } = await seedThreeTickets(request);
+    const idSet = new Set(ids);
+
+    const resp = await request.get(`${TICKETS_API}?sort=subject&order=asc`);
+    expect(resp.status()).toBe(200);
+    const { tickets } = await resp.json() as { tickets: Array<{ id: number; subject: string }> };
+
+    // Filter to only our seeded rows using the unique token that prefixes every subject.
+    // Filtering by subject prefix (not by id) is resilient to parallel test execution:
+    // two workers seeding concurrently may receive interleaved ids, making id-to-subject
+    // mapping ambiguous, but each worker's token is unique.
+    const ours = tickets.filter((t) => t.subject.startsWith(token));
+    expect(ours).toHaveLength(3);
+    // Verify all three are ours (belt-and-suspenders; the length check above covers it).
+    for (const t of ours) expect(idSet.has(t.id)).toBe(true);
+
+    // Ascending subject order: "AAA Alpha" < "MMM Middle" < "ZZZ Zeta".
+    expect(ours[0].subject).toContain("AAA");
+    expect(ours[1].subject).toContain("MMM");
+    expect(ours[2].subject).toContain("ZZZ");
+  });
+
+  test("sort=subject&order=desc → seeded tickets appear Z→A by subject", async ({
+    request,
+  }) => {
+    const { ids, token } = await seedThreeTickets(request);
+    const idSet = new Set(ids);
+
+    const resp = await request.get(`${TICKETS_API}?sort=subject&order=desc`);
+    expect(resp.status()).toBe(200);
+    const { tickets } = await resp.json() as { tickets: Array<{ id: number; subject: string }> };
+
+    const ours = tickets.filter((t) => t.subject.startsWith(token));
+    expect(ours).toHaveLength(3);
+    for (const t of ours) expect(idSet.has(t.id)).toBe(true);
+
+    // Descending subject order reverses to: "ZZZ Zeta" > "MMM Middle" > "AAA Alpha".
+    expect(ours[0].subject).toContain("ZZZ");
+    expect(ours[1].subject).toContain("MMM");
+    expect(ours[2].subject).toContain("AAA");
+  });
+
+  test("no sort params → seeded tickets appear newest-first (default unchanged)", async ({
+    request,
+  }) => {
+    // Seed only two tickets to keep the assertion simple; we just need to verify
+    // the default ordering (createdAt desc) has not regressed.
+    const suffix1 = uniqueSuffix();
+    const res1 = await request.post(WEBHOOK, {
+      headers: { "x-inbound-secret": SECRET },
+      data: {
+        fromEmail: `default-sort-a-${suffix1}@example.com`,
+        fromName: "Default Sort A",
+        subject: `Default sort older ${suffix1}`,
+        body: "Older ticket.",
+        messageId: `<default-sort-a-${suffix1}@mail.example.com>`,
+      },
+    });
+    expect(res1.status()).toBe(201);
+    const { ticketId: id1 } = await res1.json() as { ticketId: number; status: string };
+
+    const suffix2 = uniqueSuffix();
+    const res2 = await request.post(WEBHOOK, {
+      headers: { "x-inbound-secret": SECRET },
+      data: {
+        fromEmail: `default-sort-b-${suffix2}@example.com`,
+        fromName: "Default Sort B",
+        subject: `Default sort newer ${suffix2}`,
+        body: "Newer ticket.",
+        messageId: `<default-sort-b-${suffix2}@mail.example.com>`,
+      },
+    });
+    expect(res2.status()).toBe(201);
+    const { ticketId: id2 } = await res2.json() as { ticketId: number; status: string };
+
+    // id2 was created after id1 — it must have a higher auto-increment id.
+    expect(id2).toBeGreaterThan(id1);
+
+    const listResp = await request.get(TICKETS_API);
+    expect(listResp.status()).toBe(200);
+    const { tickets } = await listResp.json() as { tickets: Array<{ id: number }> };
+
+    const idx1 = tickets.findIndex((t) => t.id === id1);
+    const idx2 = tickets.findIndex((t) => t.id === id2);
+
+    expect(idx1).toBeGreaterThanOrEqual(0);
+    expect(idx2).toBeGreaterThanOrEqual(0);
+    // Newer ticket must appear before the older one.
+    expect(idx2).toBeLessThan(idx1);
+  });
+
+  test("sort=password&order=asc → 400 (whitelist enforced)", async ({
+    request,
+  }) => {
+    const resp = await request.get(`${TICKETS_API}?sort=password&order=asc`);
+    expect(resp.status()).toBe(400);
+    const body = await resp.json() as { error: unknown };
+    expect(body.error).toBeDefined();
   });
 });
 
