@@ -56,9 +56,27 @@ Schema: `ticketsQuerySchema` in `core/src/schemas/ticket.ts`, imported by `backe
 
 Seed 3 tickets with subjects `"<unique-token> AAA Alpha ticket"`, `"<unique-token> MMM Middle ticket"`, `"<unique-token> ZZZ Zeta ticket"`. Filter the sorted response by `t.subject.startsWith(token)` (NOT by id set), then assert `ours[n].subject.toContain("AAA")` etc. Filtering by token (not idSet) is parallel-safe: concurrent workers seeding at the same time may get interleaved numeric ids, making id→subject mapping ambiguous, but each worker's token is unique (timestamp+counter from a separate process).
 
+## Filter bar selectors (UI)
+
+- Status select: `getByRole("combobox", { name: /filter by status/i })` — Radix SelectTrigger with `aria-label`
+- Category select: `getByRole("combobox", { name: /filter by category/i })`
+- After clicking a combobox, options render in a Radix portal: `getByRole("option", { name: /^open$/i })`
+- Clear button (only visible when ≥1 filter active): `getByRole("button", { name: /clear all filters/i })`
+- Status badge cells (post-filter assertion): `page.getByRole("cell").filter({ has: page.locator('[data-slot="badge"]') })`
+
+**Radix Select in jsdom**: clicking the trigger does NOT open the dropdown portal in jsdom/vitest. Component tests test the Clear button visibility and `onFiltersChange` callback via direct prop injection, not simulated dropdown clicks. Full dropdown interaction is in e2e only.
+
+## GET /api/tickets — filter params
+
+- `?status=<open|resolved|closed>` — server-side WHERE; omit = all statuses
+- `?category=<general|technical|refund>` — server-side WHERE; omit = all categories
+- Filters compose with sort: `?status=open&category=refund&sort=subject&order=asc`
+- Invalid enum → 400 (e.g. `?status=pending`, `?category=billing`)
+- Schema: `ticketsQuerySchema` in `core/src/schemas/ticket.ts`
+
 ## Test file
 
-`e2e/tickets.spec.ts` — 10 tests covering: API auth (401 without session), API shape validation, API newest-first ordering, API sort-by-subject asc/desc, API default ordering (no params), API invalid sort field → 400, UI heading/card title, UI column headers, UI row presence + requester display, UI relative ordering.
+`e2e/tickets.spec.ts` — 23 tests covering: API auth, shape, sort asc/desc/default/invalid, filter by status (open/resolved/closed), filter by category (general/technical/refund), filter compose, invalid filter → 400, UI heading/card, columns, row visibility, relative ordering, filter bar visibility, status/category filter interaction, Clear button.
 
 ## Webhook seeding via authenticated `request`
 

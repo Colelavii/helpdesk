@@ -420,3 +420,221 @@ test.describe("/tickets page — UI", () => {
     expect(idx2).toBeLessThan(idx1);
   });
 });
+
+// ─── API: server-side filtering ───────────────────────────────────────────────
+
+test.describe("GET /api/tickets — server-side filtering", () => {
+  // The demo-ticket seeder creates tickets with varied statuses and categories.
+  // These tests assert that filter params are enforced by the server — every
+  // ticket in the response must match the requested filter value.
+  // No seeding is needed here: the demo data already covers all combinations.
+
+  test("status=open → every ticket in the response is open", async ({
+    request,
+  }) => {
+    const resp = await request.get(`${TICKETS_API}?status=open`);
+    expect(resp.status()).toBe(200);
+    const { tickets } = await resp.json() as {
+      tickets: Array<{ id: number; status: string }>;
+    };
+    expect(tickets.length).toBeGreaterThan(0);
+    for (const t of tickets) {
+      expect(t.status).toBe("open");
+    }
+  });
+
+  test("status=resolved → every ticket in the response is resolved", async ({
+    request,
+  }) => {
+    const resp = await request.get(`${TICKETS_API}?status=resolved`);
+    expect(resp.status()).toBe(200);
+    const { tickets } = await resp.json() as {
+      tickets: Array<{ id: number; status: string }>;
+    };
+    expect(tickets.length).toBeGreaterThan(0);
+    for (const t of tickets) {
+      expect(t.status).toBe("resolved");
+    }
+  });
+
+  test("status=closed → every ticket in the response is closed", async ({
+    request,
+  }) => {
+    const resp = await request.get(`${TICKETS_API}?status=closed`);
+    expect(resp.status()).toBe(200);
+    const { tickets } = await resp.json() as {
+      tickets: Array<{ id: number; status: string }>;
+    };
+    expect(tickets.length).toBeGreaterThan(0);
+    for (const t of tickets) {
+      expect(t.status).toBe("closed");
+    }
+  });
+
+  test("category=technical → every ticket in the response has category technical", async ({
+    request,
+  }) => {
+    const resp = await request.get(`${TICKETS_API}?category=technical`);
+    expect(resp.status()).toBe(200);
+    const { tickets } = await resp.json() as {
+      tickets: Array<{ id: number; category: string | null }>;
+    };
+    expect(tickets.length).toBeGreaterThan(0);
+    for (const t of tickets) {
+      expect(t.category).toBe("technical");
+    }
+  });
+
+  test("category=refund → every ticket in the response has category refund", async ({
+    request,
+  }) => {
+    const resp = await request.get(`${TICKETS_API}?category=refund`);
+    expect(resp.status()).toBe(200);
+    const { tickets } = await resp.json() as {
+      tickets: Array<{ id: number; category: string | null }>;
+    };
+    expect(tickets.length).toBeGreaterThan(0);
+    for (const t of tickets) {
+      expect(t.category).toBe("refund");
+    }
+  });
+
+  test("category=general → every ticket in the response has category general", async ({
+    request,
+  }) => {
+    const resp = await request.get(`${TICKETS_API}?category=general`);
+    expect(resp.status()).toBe(200);
+    const { tickets } = await resp.json() as {
+      tickets: Array<{ id: number; category: string | null }>;
+    };
+    expect(tickets.length).toBeGreaterThan(0);
+    for (const t of tickets) {
+      expect(t.category).toBe("general");
+    }
+  });
+
+  test("status + category compose: status=open&category=refund", async ({
+    request,
+  }) => {
+    const resp = await request.get(`${TICKETS_API}?status=open&category=refund`);
+    expect(resp.status()).toBe(200);
+    const { tickets } = await resp.json() as {
+      tickets: Array<{ id: number; status: string; category: string | null }>;
+    };
+    expect(tickets.length).toBeGreaterThan(0);
+    for (const t of tickets) {
+      expect(t.status).toBe("open");
+      expect(t.category).toBe("refund");
+    }
+  });
+
+  test("status=invalid → 400 (enum enforced)", async ({ request }) => {
+    const resp = await request.get(`${TICKETS_API}?status=pending`);
+    expect(resp.status()).toBe(400);
+    const body = await resp.json() as { error: unknown };
+    expect(body.error).toBeDefined();
+  });
+
+  test("category=invalid → 400 (enum enforced)", async ({ request }) => {
+    const resp = await request.get(`${TICKETS_API}?category=billing`);
+    expect(resp.status()).toBe(400);
+    const body = await resp.json() as { error: unknown };
+    expect(body.error).toBeDefined();
+  });
+});
+
+// ─── UI: /tickets page — filter bar ──────────────────────────────────────────
+
+test.describe("/tickets page — filter bar UI", () => {
+  test("status and category filter selects are visible", async ({ page }) => {
+    await page.goto("/tickets");
+    await expect(
+      page.getByRole("combobox", { name: /filter by status/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("combobox", { name: /filter by category/i }),
+    ).toBeVisible();
+  });
+
+  test("Clear button is not visible before any filter is applied", async ({
+    page,
+  }) => {
+    await page.goto("/tickets");
+    // Wait for the table to load before asserting absence of Clear.
+    await expect(page.getByRole("table")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /clear all filters/i }),
+    ).not.toBeVisible();
+  });
+
+  test("selecting a status filter shows only matching rows and reveals Clear", async ({
+    page,
+  }) => {
+    await page.goto("/tickets");
+    await expect(page.getByRole("table")).toBeVisible();
+
+    // Open the status select and choose "Resolved".
+    await page.getByRole("combobox", { name: /filter by status/i }).click();
+    await page.getByRole("option", { name: /^resolved$/i }).click();
+
+    // Every visible status badge must say "resolved".
+    const statusCells = page.getByRole("cell").filter({
+      has: page.locator('[data-slot="badge"]'),
+    });
+    const count = await statusCells.count();
+    expect(count).toBeGreaterThan(0);
+    for (let i = 0; i < count; i++) {
+      await expect(statusCells.nth(i)).toHaveText("resolved");
+    }
+
+    // Clear button appears once a filter is active.
+    await expect(
+      page.getByRole("button", { name: /clear all filters/i }),
+    ).toBeVisible();
+  });
+
+  test("selecting a category filter shows only matching rows", async ({
+    page,
+  }) => {
+    await page.goto("/tickets");
+    await expect(page.getByRole("table")).toBeVisible();
+
+    await page.getByRole("combobox", { name: /filter by category/i }).click();
+    await page.getByRole("option", { name: /^technical$/i }).click();
+
+    // Every category cell must say "technical".
+    const categoryCells = page
+      .getByRole("cell")
+      .filter({ hasText: /^technical$/i });
+    // Also confirm no cells show "general" or "refund".
+    await expect(page.getByRole("cell", { name: /^general$/i })).toHaveCount(0);
+    await expect(page.getByRole("cell", { name: /^refund$/i })).toHaveCount(0);
+    expect(await categoryCells.count()).toBeGreaterThan(0);
+  });
+
+  test("Clear button resets filters and shows all tickets again", async ({
+    page,
+  }) => {
+    await page.goto("/tickets");
+    await expect(page.getByRole("table")).toBeVisible();
+
+    // Apply a filter.
+    await page.getByRole("combobox", { name: /filter by status/i }).click();
+    await page.getByRole("option", { name: /^closed$/i }).click();
+
+    // Confirm filter is active.
+    await expect(
+      page.getByRole("button", { name: /clear all filters/i }),
+    ).toBeVisible();
+
+    // Clear the filter.
+    await page.getByRole("button", { name: /clear all filters/i }).click();
+
+    // Clear button should disappear and other status values should return.
+    await expect(
+      page.getByRole("button", { name: /clear all filters/i }),
+    ).not.toBeVisible();
+    // At least one "open" badge confirms the full list is back.
+    await expect(page.getByRole("cell").filter({ hasText: /^open$/ }).first()).toBeVisible();
+  });
+});

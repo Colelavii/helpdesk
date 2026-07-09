@@ -6,7 +6,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, Search, X } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -15,7 +15,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { TicketStatus, TicketCategory } from "@helpdesk/core";
 
@@ -29,6 +39,12 @@ export interface TicketRow {
   createdAt: string;
 }
 
+export interface TicketFilters {
+  status?: TicketStatus;
+  category?: TicketCategory;
+  search?: string;
+}
+
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
   month: "short",
@@ -36,6 +52,16 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 });
 
 const SKELETON_ROWS = 5;
+
+// Status badge styling — distinct semantic colour per state.
+const statusVariant: Record<
+  TicketStatus,
+  React.ComponentProps<typeof Badge>["variant"]
+> = {
+  open: "default",
+  resolved: "secondary",
+  closed: "outline",
+};
 
 // Column ids match `ticketSortFields` in @helpdesk/core so a header's id is
 // exactly the `sort` param the server orders by.
@@ -62,7 +88,11 @@ const columns: ColumnDef<TicketRow>[] = [
     id: "status",
     accessorKey: "status",
     header: "Status",
-    cell: ({ row }) => <span className="capitalize">{row.original.status}</span>,
+    cell: ({ row }) => (
+      <Badge variant={statusVariant[row.original.status]}>
+        {row.original.status}
+      </Badge>
+    ),
   },
   {
     id: "category",
@@ -88,16 +118,24 @@ const columns: ColumnDef<TicketRow>[] = [
 
 const EMPTY: TicketRow[] = [];
 
+// A sentinel value used by the Select components to represent "no filter"
+// (Select requires a string value; empty string maps to `undefined` on output).
+const ALL = "__all__";
+
 export default function TicketsTable({
   tickets,
   isPending = false,
   sorting,
   onSortingChange,
+  filters,
+  onFiltersChange,
 }: {
   tickets?: TicketRow[];
   isPending?: boolean;
   sorting: SortingState;
   onSortingChange: OnChangeFn<SortingState>;
+  filters: TicketFilters;
+  onFiltersChange: (f: TicketFilters) => void;
 }) {
   const table = useReactTable({
     data: tickets ?? EMPTY,
@@ -108,47 +146,135 @@ export default function TicketsTable({
     getCoreRowModel: getCoreRowModel(),
   });
 
+  const hasActiveFilter = Boolean(
+    filters.status ?? filters.category ?? filters.search,
+  );
+
   return (
-    <Table>
-      <TableHeader>
-        {table.getHeaderGroups().map((headerGroup) => (
-          <TableRow key={headerGroup.id}>
-            {headerGroup.headers.map((header) => {
-              const sorted = header.column.getIsSorted();
-              const Icon =
-                sorted === "asc"
-                  ? ArrowUp
-                  : sorted === "desc"
-                    ? ArrowDown
-                    : ChevronsUpDown;
-              return (
-                <TableHead key={header.id}>
-                  <button
-                    type="button"
-                    onClick={header.column.getToggleSortingHandler()}
-                    className="-ml-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    aria-label={`Sort by ${String(header.column.columnDef.header)}`}
-                  >
-                    {flexRender(
-                      header.column.columnDef.header,
-                      header.getContext(),
-                    )}
-                    <Icon
-                      className={cn(
-                        "size-3.5",
-                        sorted ? "text-foreground" : "text-muted-foreground/60",
+    <div className="space-y-3">
+      {/* ── Filter bar ──────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Search input — value is the live (undebounced) input; debouncing
+            is handled in TicketsPage so the input stays responsive. */}
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Search tickets…"
+            aria-label="Search tickets"
+            value={filters.search ?? ""}
+            onChange={(e) =>
+              onFiltersChange({ ...filters, search: e.target.value || undefined })
+            }
+            className="h-8 w-64 pl-8 text-sm"
+          />
+        </div>
+
+        <Select
+          value={filters.status ?? ALL}
+          onValueChange={(v) =>
+            onFiltersChange({
+              ...filters,
+              status: v === ALL ? undefined : (v as TicketStatus),
+            })
+          }
+        >
+          <SelectTrigger
+            size="sm"
+            className="w-36"
+            aria-label="Filter by status"
+          >
+            <SelectValue placeholder="All statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All statuses</SelectItem>
+            <SelectItem value="open">Open</SelectItem>
+            <SelectItem value="resolved">Resolved</SelectItem>
+            <SelectItem value="closed">Closed</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={filters.category ?? ALL}
+          onValueChange={(v) =>
+            onFiltersChange({
+              ...filters,
+              category: v === ALL ? undefined : (v as TicketCategory),
+            })
+          }
+        >
+          <SelectTrigger
+            size="sm"
+            className="w-40"
+            aria-label="Filter by category"
+          >
+            <SelectValue placeholder="All categories" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All categories</SelectItem>
+            <SelectItem value="general">General</SelectItem>
+            <SelectItem value="technical">Technical</SelectItem>
+            <SelectItem value="refund">Refund</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {hasActiveFilter && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onFiltersChange({})}
+            className="h-8 gap-1 text-muted-foreground"
+            aria-label="Clear all filters"
+          >
+            <X className="size-3.5" />
+            Clear
+          </Button>
+        )}
+      </div>
+
+      {/* ── Table ────────────────────────────────────────────────────────── */}
+      <Table>
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => {
+                const sorted = header.column.getIsSorted();
+                const Icon =
+                  sorted === "asc"
+                    ? ArrowUp
+                    : sorted === "desc"
+                      ? ArrowDown
+                      : ChevronsUpDown;
+                return (
+                  <TableHead key={header.id}>
+                    <button
+                      type="button"
+                      onClick={header.column.getToggleSortingHandler()}
+                      className="-ml-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={`Sort by ${String(header.column.columnDef.header)}`}
+                    >
+                      {flexRender(
+                        header.column.columnDef.header,
+                        header.getContext(),
                       )}
-                    />
-                  </button>
-                </TableHead>
-              );
-            })}
-          </TableRow>
-        ))}
-      </TableHeader>
-      <TableBody>
-        {isPending
-          ? Array.from({ length: SKELETON_ROWS }).map((_, i) => (
+                      <Icon
+                        className={cn(
+                          "size-3.5",
+                          sorted
+                            ? "text-foreground"
+                            : "text-muted-foreground/60",
+                        )}
+                      />
+                    </button>
+                  </TableHead>
+                );
+              })}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {isPending ? (
+            Array.from({ length: SKELETON_ROWS }).map((_, i) => (
               <TableRow key={i}>
                 <TableCell>
                   <Skeleton className="h-4 w-48" />
@@ -167,7 +293,17 @@ export default function TicketsTable({
                 </TableCell>
               </TableRow>
             ))
-          : table.getRowModel().rows.map((row) => (
+          ) : (tickets ?? EMPTY).length === 0 ? (
+            <TableRow>
+              <TableCell
+                colSpan={columns.length}
+                className="h-24 text-center text-sm text-muted-foreground"
+              >
+                No tickets match the current filters.
+              </TableCell>
+            </TableRow>
+          ) : (
+            table.getRowModel().rows.map((row) => (
               <TableRow key={row.id}>
                 {row.getVisibleCells().map((cell) => (
                   <TableCell key={cell.id}>
@@ -175,8 +311,10 @@ export default function TicketsTable({
                   </TableCell>
                 ))}
               </TableRow>
-            ))}
-      </TableBody>
-    </Table>
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </div>
   );
 }

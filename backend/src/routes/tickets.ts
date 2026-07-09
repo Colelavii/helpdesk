@@ -11,13 +11,33 @@ export const ticketsRouter = Router();
 ticketsRouter.use(requireAuth);
 
 ticketsRouter.get("/", async (req: Request, res: Response) => {
-  // Sorting happens on the server. The schema whitelists sort fields (so the
-  // dynamic orderBy key can't be injected) and defaults to newest-first.
+  // Sorting and filtering happen on the server. The schema whitelists sort
+  // fields (so the dynamic orderBy key can't be injected) and defaults to
+  // newest-first. Filter params are optional — omitting one means "all values".
   const query = parseBody(ticketsQuerySchema, req.query, res);
   if (!query) return;
 
   const orderBy: Prisma.TicketOrderByWithRelationInput = {
     [query.sort]: query.order,
+  };
+
+  // Build a case-insensitive substring search across subject, requester name,
+  // and requester email when a non-empty search string is provided.
+  const searchClause: Prisma.TicketWhereInput | undefined =
+    query.search
+      ? {
+          OR: [
+            { subject: { contains: query.search, mode: "insensitive" } },
+            { requesterName: { contains: query.search, mode: "insensitive" } },
+            { requesterEmail: { contains: query.search, mode: "insensitive" } },
+          ],
+        }
+      : undefined;
+
+  const where: Prisma.TicketWhereInput = {
+    ...(query.status !== undefined && { status: query.status }),
+    ...(query.category !== undefined && { category: query.category }),
+    ...searchClause,
   };
 
   const tickets = await prisma.ticket.findMany({
@@ -31,6 +51,7 @@ ticketsRouter.get("/", async (req: Request, res: Response) => {
       createdAt: true,
       updatedAt: true,
     },
+    where,
     orderBy,
   });
   res.json({ tickets });
