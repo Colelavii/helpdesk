@@ -1,12 +1,21 @@
 import {
   type ColumnDef,
   type OnChangeFn,
+  type PaginationState,
   type SortingState,
   flexRender,
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ChevronsUpDown, Search, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsUpDown,
+  Search,
+  X,
+} from "lucide-react";
 import {
   Table,
   TableBody,
@@ -129,6 +138,10 @@ export default function TicketsTable({
   onSortingChange,
   filters,
   onFiltersChange,
+  pagination,
+  onPaginationChange,
+  pageCount,
+  total,
 }: {
   tickets?: TicketRow[];
   isPending?: boolean;
@@ -136,13 +149,20 @@ export default function TicketsTable({
   onSortingChange: OnChangeFn<SortingState>;
   filters: TicketFilters;
   onFiltersChange: (f: TicketFilters) => void;
+  pagination: PaginationState;
+  onPaginationChange: OnChangeFn<PaginationState>;
+  pageCount: number;
+  total: number;
 }) {
   const table = useReactTable({
     data: tickets ?? EMPTY,
     columns,
-    state: { sorting },
+    state: { sorting, pagination },
     onSortingChange,
+    onPaginationChange,
     manualSorting: true, // the server does the sorting
+    manualPagination: true, // the server does the paging (skip/take)
+    pageCount,
     getCoreRowModel: getCoreRowModel(),
   });
 
@@ -315,6 +335,38 @@ export default function TicketsTable({
           )}
         </TableBody>
       </Table>
+
+      {/* ── Pagination ───────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-sm text-muted-foreground">
+          {total} ticket{total === 1 ? "" : "s"}
+        </p>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">
+            Page {pagination.pageIndex + 1} of {pageCount}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+            aria-label="Previous page"
+          >
+            <ChevronLeft className="size-3.5" />
+            Prev
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+            aria-label="Next page"
+          >
+            Next
+            <ChevronRight className="size-3.5" />
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

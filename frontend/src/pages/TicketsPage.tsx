@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { SortingState } from "@tanstack/react-table";
+import type { OnChangeFn, PaginationState, SortingState } from "@tanstack/react-table";
 import axios from "axios";
 import type { TicketsQuery } from "@helpdesk/core";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -16,15 +16,20 @@ import TicketsTable, {
   type TicketFilters,
 } from "@/components/TicketsTable";
 
+interface TicketsResponse {
+  tickets: TicketRow[];
+  total: number;
+}
+
 async function fetchTickets(
   params: TicketsQuery,
   signal: AbortSignal,
-): Promise<TicketRow[]> {
-  const { data } = await axios.get<{ tickets: TicketRow[] }>("/api/tickets", {
+): Promise<TicketsResponse> {
+  const { data } = await axios.get<TicketsResponse>("/api/tickets", {
     params,
     signal,
   });
-  return data.tickets;
+  return data;
 }
 
 export default function TicketsPage() {
@@ -32,6 +37,21 @@ export default function TicketsPage() {
     { id: "createdAt", desc: true },
   ]);
   const [filters, setFilters] = useState<TicketFilters>({});
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 10,
+  });
+
+  // Changing the sort, a filter, or the search resets back to the first page —
+  // otherwise you could be stranded on a page that no longer exists.
+  const handleSortingChange: OnChangeFn<SortingState> = (updater) => {
+    setSorting(updater);
+    setPagination((p) => ({ ...p, pageIndex: 0 }));
+  };
+  const handleFiltersChange = (next: TicketFilters) => {
+    setFilters(next);
+    setPagination((p) => ({ ...p, pageIndex: 0 }));
+  };
 
   // Always keep a sort so the server has a deterministic order.
   const sort = (sorting[0]?.id ?? "createdAt") as TicketsQuery["sort"];
@@ -44,20 +64,21 @@ export default function TicketsPage() {
   const params: TicketsQuery = {
     sort,
     order,
+    page: pagination.pageIndex + 1,
+    pageSize: pagination.pageSize,
     ...(filters.status && { status: filters.status }),
     ...(filters.category && { category: filters.category }),
     ...(debouncedSearch && { search: debouncedSearch }),
   };
 
-  const {
-    data: tickets,
-    isPending,
-    isError,
-  } = useQuery({
+  const { data, isPending, isError } = useQuery({
     queryKey: ["tickets", params],
     queryFn: ({ signal }) => fetchTickets(params, signal),
     placeholderData: keepPreviousData,
   });
+
+  const total = data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / pagination.pageSize));
 
   return (
     <section className="space-y-6">
@@ -81,9 +102,13 @@ export default function TicketsPage() {
             <TicketsTable
               isPending
               sorting={sorting}
-              onSortingChange={setSorting}
+              onSortingChange={handleSortingChange}
               filters={filters}
-              onFiltersChange={setFilters}
+              onFiltersChange={handleFiltersChange}
+              pagination={pagination}
+              onPaginationChange={setPagination}
+              pageCount={pageCount}
+              total={total}
             />
           ) : isError ? (
             <p role="alert" className="text-sm text-destructive">
@@ -91,11 +116,15 @@ export default function TicketsPage() {
             </p>
           ) : (
             <TicketsTable
-              tickets={tickets}
+              tickets={data.tickets}
               sorting={sorting}
-              onSortingChange={setSorting}
+              onSortingChange={handleSortingChange}
               filters={filters}
-              onFiltersChange={setFilters}
+              onFiltersChange={handleFiltersChange}
+              pagination={pagination}
+              onPaginationChange={setPagination}
+              pageCount={pageCount}
+              total={total}
             />
           )}
         </CardContent>

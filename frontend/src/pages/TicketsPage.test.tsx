@@ -66,7 +66,7 @@ describe("TicketsPage", () => {
   });
 
   it("renders a row for each ticket in the order returned", async () => {
-    mockGet().mockResolvedValue({ data: { tickets: sampleTickets } });
+    mockGet().mockResolvedValue({ data: { tickets: sampleTickets, total: sampleTickets.length } });
 
     renderWithClient(<TicketsPage />);
 
@@ -95,7 +95,7 @@ describe("TicketsPage", () => {
   });
 
   it("shows the empty state inside the table when the API returns no tickets", async () => {
-    mockGet().mockResolvedValue({ data: { tickets: [] } });
+    mockGet().mockResolvedValue({ data: { tickets: [], total: 0 } });
 
     renderWithClient(<TicketsPage />);
 
@@ -118,7 +118,7 @@ describe("TicketsPage", () => {
 
 describe("TicketsPage — server-side sorting", () => {
   it("requests the default sort (createdAt desc) on initial load", async () => {
-    const get = mockGet().mockResolvedValue({ data: { tickets: sampleTickets } });
+    const get = mockGet().mockResolvedValue({ data: { tickets: sampleTickets, total: sampleTickets.length } });
 
     renderWithClient(<TicketsPage />);
     await screen.findByText("Refund for duplicate charge");
@@ -126,13 +126,13 @@ describe("TicketsPage — server-side sorting", () => {
     expect(get).toHaveBeenLastCalledWith(
       "/api/tickets",
       expect.objectContaining({
-        params: { sort: "createdAt", order: "desc" },
+        params: expect.objectContaining({ sort: "createdAt", order: "desc" }),
       }),
     );
   });
 
   it("re-fetches with sort params when a column header is clicked", async () => {
-    const get = mockGet().mockResolvedValue({ data: { tickets: sampleTickets } });
+    const get = mockGet().mockResolvedValue({ data: { tickets: sampleTickets, total: sampleTickets.length } });
     const user = userEvent.setup();
 
     renderWithClient(<TicketsPage />);
@@ -145,7 +145,7 @@ describe("TicketsPage — server-side sorting", () => {
       expect(get).toHaveBeenLastCalledWith(
         "/api/tickets",
         expect.objectContaining({
-          params: { sort: "subject", order: "asc" },
+          params: expect.objectContaining({ sort: "subject", order: "asc" }),
         }),
       ),
     );
@@ -155,7 +155,7 @@ describe("TicketsPage — server-side sorting", () => {
       expect(get).toHaveBeenLastCalledWith(
         "/api/tickets",
         expect.objectContaining({
-          params: { sort: "subject", order: "desc" },
+          params: expect.objectContaining({ sort: "subject", order: "desc" }),
         }),
       ),
     );
@@ -166,7 +166,7 @@ describe("TicketsPage — server-side sorting", () => {
 
 describe("TicketsPage — server-side filtering (API params)", () => {
   it("requests only sort params when no filter is active", async () => {
-    const get = mockGet().mockResolvedValue({ data: { tickets: sampleTickets } });
+    const get = mockGet().mockResolvedValue({ data: { tickets: sampleTickets, total: sampleTickets.length } });
 
     renderWithClient(<TicketsPage />);
     await screen.findByText("Refund for duplicate charge");
@@ -174,13 +174,13 @@ describe("TicketsPage — server-side filtering (API params)", () => {
     expect(get).toHaveBeenLastCalledWith(
       "/api/tickets",
       expect.objectContaining({
-        params: { sort: "createdAt", order: "desc" },
+        params: expect.objectContaining({ sort: "createdAt", order: "desc" }),
       }),
     );
   });
 
   it("filter controls are present on initial render", async () => {
-    mockGet().mockResolvedValue({ data: { tickets: sampleTickets } });
+    mockGet().mockResolvedValue({ data: { tickets: sampleTickets, total: sampleTickets.length } });
 
     renderWithClient(<TicketsPage />);
     await screen.findByText("Refund for duplicate charge");
@@ -204,7 +204,7 @@ describe("TicketsPage — server-side filtering (API params)", () => {
 
 describe("TicketsPage — search", () => {
   it("re-fetches with search param after debounce when text is typed", async () => {
-    const get = mockGet().mockResolvedValue({ data: { tickets: sampleTickets } });
+    const get = mockGet().mockResolvedValue({ data: { tickets: sampleTickets, total: sampleTickets.length } });
     const user = userEvent.setup();
 
     renderWithClient(<TicketsPage />);
@@ -235,7 +235,7 @@ describe("TicketsPage — search", () => {
   });
 
   it("does not include search param when the input is cleared", async () => {
-    const get = mockGet().mockResolvedValue({ data: { tickets: sampleTickets } });
+    const get = mockGet().mockResolvedValue({ data: { tickets: sampleTickets, total: sampleTickets.length } });
     const user = userEvent.setup();
 
     renderWithClient(<TicketsPage />);
@@ -281,6 +281,10 @@ describe("TicketsTable — filter bar rendering", () => {
     onSortingChange: () => {},
     filters: {} as TicketFilters,
     onFiltersChange: noop,
+    pagination: { pageIndex: 0, pageSize: 20 },
+    onPaginationChange: () => {},
+    pageCount: 1,
+    total: sampleTickets.length,
   };
 
   it("renders the search input and both filter comboboxes", () => {
@@ -399,5 +403,96 @@ describe("TicketsTable — filter bar rendering", () => {
     expect(
       screen.getByText("No tickets match the current filters."),
     ).toBeInTheDocument();
+  });
+});
+
+// ─── Pagination ───────────────────────────────────────────────────────────────
+
+describe("TicketsPage — server-side pagination", () => {
+  it("sends page and pageSize params on initial load", async () => {
+    const get = mockGet().mockResolvedValue({
+      data: { tickets: sampleTickets, total: sampleTickets.length },
+    });
+
+    renderWithClient(<TicketsPage />);
+    await screen.findByText("Refund for duplicate charge");
+
+    expect(get).toHaveBeenLastCalledWith(
+      "/api/tickets",
+      expect.objectContaining({
+        params: expect.objectContaining({ page: 1, pageSize: 10 }),
+      }),
+    );
+  });
+
+  it("disables Prev on the first page and Next when there's a single page", async () => {
+    // total (2) <= pageSize (20) → one page, so both controls are disabled.
+    mockGet().mockResolvedValue({
+      data: { tickets: sampleTickets, total: sampleTickets.length },
+    });
+
+    renderWithClient(<TicketsPage />);
+    await screen.findByText("Refund for duplicate charge");
+
+    expect(
+      screen.getByRole("button", { name: /previous page/i }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /next page/i })).toBeDisabled();
+  });
+
+  it("fetches the next page when Next is clicked", async () => {
+    // total 50 with pageSize 20 → 3 pages, so Next is enabled.
+    const get = mockGet().mockResolvedValue({
+      data: { tickets: sampleTickets, total: 50 },
+    });
+    const user = userEvent.setup();
+
+    renderWithClient(<TicketsPage />);
+    await screen.findByText("Refund for duplicate charge");
+
+    const next = screen.getByRole("button", { name: /next page/i });
+    expect(next).toBeEnabled();
+    await user.click(next);
+
+    await waitFor(() =>
+      expect(get).toHaveBeenLastCalledWith(
+        "/api/tickets",
+        expect.objectContaining({
+          params: expect.objectContaining({ page: 2 }),
+        }),
+      ),
+    );
+  });
+
+  it("resets to the first page when the sort changes", async () => {
+    const get = mockGet().mockResolvedValue({
+      data: { tickets: sampleTickets, total: 50 },
+    });
+    const user = userEvent.setup();
+
+    renderWithClient(<TicketsPage />);
+    await screen.findByText("Refund for duplicate charge");
+
+    // Advance to page 2.
+    await user.click(screen.getByRole("button", { name: /next page/i }));
+    await waitFor(() =>
+      expect(get).toHaveBeenLastCalledWith(
+        "/api/tickets",
+        expect.objectContaining({
+          params: expect.objectContaining({ page: 2 }),
+        }),
+      ),
+    );
+
+    // Changing the sort snaps back to page 1.
+    await user.click(screen.getByRole("button", { name: /sort by subject/i }));
+    await waitFor(() =>
+      expect(get).toHaveBeenLastCalledWith(
+        "/api/tickets",
+        expect.objectContaining({
+          params: expect.objectContaining({ page: 1, sort: "subject" }),
+        }),
+      ),
+    );
   });
 });

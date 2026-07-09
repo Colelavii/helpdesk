@@ -22,6 +22,9 @@ export const ticketsQuerySchema = z.object({
   // Free-text search across subject, requester name, and requester email.
   // Empty string is treated the same as omitting the param.
   search: z.string().trim().optional(),
+  // Pagination (1-based page). Coerced because query params arrive as strings.
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(10),
 });
 
 export type TicketSortField = (typeof ticketSortFields)[number];

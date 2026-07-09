@@ -202,7 +202,11 @@ test.describe("GET /api/tickets — server-side sorting", () => {
     const { ids, token } = await seedThreeTickets(request);
     const idSet = new Set(ids);
 
-    const resp = await request.get(`${TICKETS_API}?sort=subject&order=asc`);
+    // Scope to this run's tickets via search so they all land on one page
+    // (results are paginated; without this the seeded rows may fall off page 1).
+    const resp = await request.get(
+      `${TICKETS_API}?sort=subject&order=asc&search=${encodeURIComponent(token)}`,
+    );
     expect(resp.status()).toBe(200);
     const { tickets } = await resp.json() as { tickets: Array<{ id: number; subject: string }> };
 
@@ -227,7 +231,9 @@ test.describe("GET /api/tickets — server-side sorting", () => {
     const { ids, token } = await seedThreeTickets(request);
     const idSet = new Set(ids);
 
-    const resp = await request.get(`${TICKETS_API}?sort=subject&order=desc`);
+    const resp = await request.get(
+      `${TICKETS_API}?sort=subject&order=desc&search=${encodeURIComponent(token)}`,
+    );
     expect(resp.status()).toBe(200);
     const { tickets } = await resp.json() as { tickets: Array<{ id: number; subject: string }> };
 
@@ -601,6 +607,14 @@ test.describe("/tickets page — filter bar UI", () => {
 
     await page.getByRole("combobox", { name: /filter by category/i }).click();
     await page.getByRole("option", { name: /^technical$/i }).click();
+
+    // Wait for the filtered results to render before asserting. keepPreviousData
+    // briefly shows the prior page; with pagination that page can contain no
+    // general/refund cells, so the absence checks alone wouldn't wait for the
+    // refetch. Requiring a technical cell first guarantees the new data is in.
+    await expect(
+      page.getByRole("cell", { name: /^technical$/i }).first(),
+    ).toBeVisible();
 
     // Every category cell must say "technical".
     const categoryCells = page

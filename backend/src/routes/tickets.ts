@@ -40,19 +40,28 @@ ticketsRouter.get("/", async (req: Request, res: Response) => {
     ...searchClause,
   };
 
-  const tickets = await prisma.ticket.findMany({
-    select: {
-      id: true,
-      subject: true,
-      requesterEmail: true,
-      requesterName: true,
-      status: true,
-      category: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-    where,
-    orderBy,
-  });
-  res.json({ tickets });
+  const { page, pageSize } = query;
+
+  // Count + page in one round-trip so `total` is consistent with the slice.
+  const [total, tickets] = await prisma.$transaction([
+    prisma.ticket.count({ where }),
+    prisma.ticket.findMany({
+      select: {
+        id: true,
+        subject: true,
+        requesterEmail: true,
+        requesterName: true,
+        status: true,
+        category: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      where,
+      orderBy,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  res.json({ tickets, total, page, pageSize });
 });
