@@ -103,14 +103,20 @@ describe("TicketDetailPage", () => {
     expect(
       await screen.findByRole("heading", { name: "Cannot access the portal" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(TicketStatus.open)).toBeInTheDocument();
-    expect(screen.getByText(TicketCategory.technical)).toBeInTheDocument();
     // The requester appears in the header and again as the inbound sender.
     expect(screen.getAllByText(/Sam Student/).length).toBeGreaterThan(0);
 
-    // The assignment control is present (the Radix Select's selected value /
-    // options aren't reliably assertable in jsdom — the assign interaction is
-    // covered by e2e).
+    // Status, category, and assignee are editable Selects. Radix Select's
+    // selected value / options aren't reliably assertable in jsdom, so we check
+    // the controls exist; the update interactions are covered by e2e.
+    expect(screen.getByText("Status")).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: /ticket status/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Category")).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: /ticket category/i }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Assigned to")).toBeInTheDocument();
     expect(
       screen.getByRole("combobox", { name: /assign ticket/i }),

@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
-import { ticketsQuerySchema } from "@helpdesk/core";
+import { ticketsQuerySchema, TicketStatus, TicketCategory } from "@helpdesk/core";
 import { requireAuth } from "../require-auth.ts";
 import { prisma } from "../prisma.ts";
 import { parseBody } from "../parse-body.ts";
@@ -125,9 +125,12 @@ ticketsRouter.get(
   },
 );
 
-const assignSchema = z.object({
-  // A Better Auth user id, or null to unassign.
-  assignedToId: z.string().min(1).nullable(),
+// Partial ticket update. Every field is optional so callers can change any
+// subset; `assignedToId`/`category` accept null to clear.
+const updateTicketSchema = z.object({
+  assignedToId: z.string().min(1).nullable().optional(),
+  status: z.enum(TicketStatus).optional(),
+  category: z.enum(TicketCategory).nullable().optional(),
 });
 
 ticketsRouter.patch(
@@ -139,7 +142,7 @@ ticketsRouter.patch(
       return;
     }
 
-    const data = parseBody(assignSchema, req.body, res);
+    const data = parseBody(updateTicketSchema, req.body, res);
     if (!data) return;
 
     const existing = await prisma.ticket.findUnique({
@@ -165,7 +168,14 @@ ticketsRouter.patch(
 
     const ticket = await prisma.ticket.update({
       where: { id },
-      data: { assignedToId: data.assignedToId },
+      // Only touch the fields that were provided (undefined = leave as-is).
+      data: {
+        ...(data.assignedToId !== undefined && {
+          assignedToId: data.assignedToId,
+        }),
+        ...(data.status !== undefined && { status: data.status }),
+        ...(data.category !== undefined && { category: data.category }),
+      },
       select: {
         id: true,
         subject: true,
