@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { z } from "zod";
 import { ticketsQuerySchema } from "@helpdesk/core";
 import { requireAuth } from "../require-auth.ts";
 import { prisma } from "../prisma.ts";
@@ -65,3 +66,119 @@ ticketsRouter.get("/", async (req: Request, res: Response) => {
 
   res.json({ tickets, total, page, pageSize });
 });
+
+// Staff a ticket can be assigned to. Any signed-in user may fetch this (it's
+// needed to populate the assignee picker), so it's not behind requireAdmin.
+// Registered before "/:id" so "assignees" isn't captured as an id.
+ticketsRouter.get("/assignees", async (_req: Request, res: Response) => {
+  const users = await prisma.user.findMany({
+    where: { deletedAt: null },
+    select: { id: true, name: true, email: true },
+    orderBy: { name: "asc" },
+  });
+  res.json({ users });
+});
+
+ticketsRouter.get(
+  "/:id",
+  async (req: Request<{ id: string }>, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      res.status(404).json({ error: "Ticket not found" });
+      return;
+    }
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        subject: true,
+        requesterEmail: true,
+        requesterName: true,
+        status: true,
+        category: true,
+        createdAt: true,
+        updatedAt: true,
+        assignedTo: {
+          select: { id: true, name: true, email: true },
+        },
+        messages: {
+          select: {
+            id: true,
+            direction: true,
+            fromEmail: true,
+            fromName: true,
+            body: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: "asc" }, // oldest first — reads as a thread
+        },
+      },
+    });
+
+    if (!ticket) {
+      res.status(404).json({ error: "Ticket not found" });
+      return;
+    }
+
+    res.json({ ticket });
+  },
+);
+
+const assignSchema = z.object({
+  // A Better Auth user id, or null to unassign.
+  assignedToId: z.string().min(1).nullable(),
+});
+
+ticketsRouter.patch(
+  "/:id",
+  async (req: Request<{ id: string }>, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      res.status(404).json({ error: "Ticket not found" });
+      return;
+    }
+
+    const data = parseBody(assignSchema, req.body, res);
+    if (!data) return;
+
+    const existing = await prisma.ticket.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!existing) {
+      res.status(404).json({ error: "Ticket not found" });
+      return;
+    }
+
+    // If assigning (not unassigning), the target must be an active user.
+    if (data.assignedToId) {
+      const assignee = await prisma.user.findFirst({
+        where: { id: data.assignedToId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!assignee) {
+        res.status(400).json({ error: "Assignee not found" });
+        return;
+      }
+    }
+
+    const ticket = await prisma.ticket.update({
+      where: { id },
+      data: { assignedToId: data.assignedToId },
+      select: {
+        id: true,
+        subject: true,
+        requesterEmail: true,
+        requesterName: true,
+        status: true,
+        category: true,
+        createdAt: true,
+        updatedAt: true,
+        assignedTo: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    res.json({ ticket });
+  },
+);

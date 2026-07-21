@@ -35,8 +35,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TextLink } from "@/components/ui/link";
 import { cn } from "@/lib/utils";
-import type { TicketStatus, TicketCategory } from "@helpdesk/core";
+import { TicketStatus, TicketCategory } from "@helpdesk/core";
 
 export interface TicketRow {
   id: number;
@@ -62,8 +63,9 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 
 const SKELETON_ROWS = 5;
 
-// Status badge styling — distinct semantic colour per state.
-const statusVariant: Record<
+// Status badge styling — distinct semantic colour per state. Exported so the
+// ticket detail page renders the status identically.
+export const statusVariant: Record<
   TicketStatus,
   React.ComponentProps<typeof Badge>["variant"]
 > = {
@@ -80,7 +82,9 @@ const columns: ColumnDef<TicketRow>[] = [
     accessorKey: "subject",
     header: "Subject",
     cell: ({ row }) => (
-      <span className="font-medium">{row.original.subject}</span>
+      <TextLink to={`/tickets/${row.original.id}`} className="font-medium">
+        {row.original.subject}
+      </TextLink>
     ),
   },
   {
@@ -208,9 +212,11 @@ export default function TicketsTable({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>All statuses</SelectItem>
-            <SelectItem value="open">Open</SelectItem>
-            <SelectItem value="resolved">Resolved</SelectItem>
-            <SelectItem value="closed">Closed</SelectItem>
+            {Object.values(TicketStatus).map((status) => (
+              <SelectItem key={status} value={status} className="capitalize">
+                {status}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
 
@@ -232,9 +238,15 @@ export default function TicketsTable({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>All categories</SelectItem>
-            <SelectItem value="general">General</SelectItem>
-            <SelectItem value="technical">Technical</SelectItem>
-            <SelectItem value="refund">Refund</SelectItem>
+            {Object.values(TicketCategory).map((category) => (
+              <SelectItem
+                key={category}
+                value={category}
+                className="capitalize"
+              >
+                {category}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
 

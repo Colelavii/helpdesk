@@ -1,7 +1,8 @@
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Role } from "@helpdesk/core";
 import { signOut, useSession } from "../lib/auth-client";
 import { Button } from "@/components/ui/button";
+import { TextLink } from "@/components/ui/link";
 
 export default function NavBar() {
   const navigate = useNavigate();
@@ -15,25 +16,16 @@ export default function NavBar() {
   return (
     <nav className="flex items-center justify-between border-b bg-background px-6 py-3">
       <div className="flex gap-4">
-        <Link
-          to="/"
-          className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
+        <TextLink to="/" variant="nav">
           Home
-        </Link>
-        <Link
-          to="/tickets"
-          className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
+        </TextLink>
+        <TextLink to="/tickets" variant="nav">
           Tickets
-        </Link>
+        </TextLink>
         {session?.user.role === Role.admin && (
-          <Link
-            to="/users"
-            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
+          <TextLink to="/users" variant="nav">
             Users
-          </Link>
+          </TextLink>
         )}
       </div>
       {session && (

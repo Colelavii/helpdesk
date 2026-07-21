@@ -55,7 +55,7 @@ export const test = base.extend<AuthFixtures>({
 
     await page.goto("/login");
     await page.getByLabel("Email").fill(agentCredentials.email);
-    await page.getByLabel("Password").fill(agentCredentials.password);
+    await page.getByLabel("Password", { exact: true }).fill(agentCredentials.password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL("/");
 

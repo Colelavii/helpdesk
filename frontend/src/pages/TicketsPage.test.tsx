@@ -92,6 +92,11 @@ describe("TicketsPage", () => {
     expect(rows[0]).toHaveTextContent("Refund for duplicate charge");
     expect(rows[1]).toHaveTextContent("Cannot log in");
     expect(document.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(0);
+
+    // The subject links to that ticket's detail page.
+    expect(
+      screen.getByRole("link", { name: "Refund for duplicate charge" }),
+    ).toHaveAttribute("href", "/tickets/2");
   });
 
   it("shows the empty state inside the table when the API returns no tickets", async () => {

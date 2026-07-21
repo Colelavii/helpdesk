@@ -17,7 +17,7 @@ setup("authenticate as admin", async ({ page }) => {
   await page.goto("/login");
 
   await page.getByLabel("Email").fill("admin@example.com");
-  await page.getByLabel("Password").fill("e2e-test-admin-password");
+  await page.getByLabel("Password", { exact: true }).fill("e2e-test-admin-password");
   await page.getByRole("button", { name: "Sign in" }).click();
 
   // The app navigates to "/" after a successful login.

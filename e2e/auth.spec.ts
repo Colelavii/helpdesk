@@ -31,7 +31,7 @@ test.describe("Login — happy path", () => {
     await page.goto("/login");
 
     await page.getByLabel("Email").fill("admin@example.com");
-    await page.getByLabel("Password").fill("e2e-test-admin-password");
+    await page.getByLabel("Password", { exact: true }).fill("e2e-test-admin-password");
     await page.getByRole("button", { name: "Sign in" }).click();
 
     await expect(page).toHaveURL("/");
@@ -42,7 +42,7 @@ test.describe("Login — happy path", () => {
   test("session persists across a full page reload", async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel("Email").fill("admin@example.com");
-    await page.getByLabel("Password").fill("e2e-test-admin-password");
+    await page.getByLabel("Password", { exact: true }).fill("e2e-test-admin-password");
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL("/");
 
@@ -74,7 +74,7 @@ test.describe("Logout", () => {
     // Sign in first.
     await page.goto("/login");
     await page.getByLabel("Email").fill("admin@example.com");
-    await page.getByLabel("Password").fill("e2e-test-admin-password");
+    await page.getByLabel("Password", { exact: true }).fill("e2e-test-admin-password");
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL("/");
 
@@ -87,7 +87,7 @@ test.describe("Logout", () => {
     // Sign in then sign out.
     await page.goto("/login");
     await page.getByLabel("Email").fill("admin@example.com");
-    await page.getByLabel("Password").fill("e2e-test-admin-password");
+    await page.getByLabel("Password", { exact: true }).fill("e2e-test-admin-password");
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL("/");
     await page.getByRole("button", { name: "Sign out" }).click();
@@ -107,7 +107,7 @@ test.describe("Login — validation errors", () => {
   test("wrong password shows credential error", async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel("Email").fill("admin@example.com");
-    await page.getByLabel("Password").fill("definitely-wrong-password");
+    await page.getByLabel("Password", { exact: true }).fill("definitely-wrong-password");
     await page.getByRole("button", { name: "Sign in" }).click();
 
     // Better Auth returns an error; the form renders it in a role="alert" element.
@@ -118,7 +118,7 @@ test.describe("Login — validation errors", () => {
   test("unknown email shows credential error", async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel("Email").fill("nobody@example.com");
-    await page.getByLabel("Password").fill("some-password");
+    await page.getByLabel("Password", { exact: true }).fill("some-password");
     await page.getByRole("button", { name: "Sign in" }).click();
 
     await expect(page.getByRole("alert")).toBeVisible();
@@ -128,7 +128,7 @@ test.describe("Login — validation errors", () => {
   test("empty email shows zod validation message", async ({ page }) => {
     await page.goto("/login");
     // Leave email blank, fill password, submit.
-    await page.getByLabel("Password").fill("some-password");
+    await page.getByLabel("Password", { exact: true }).fill("some-password");
     await page.getByRole("button", { name: "Sign in" }).click();
 
     // react-hook-form + zod renders the field error inline; no network call is made.
@@ -151,7 +151,7 @@ test.describe("Login — validation errors", () => {
   test("malformed email shows zod validation message", async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel("Email").fill("not-an-email");
-    await page.getByLabel("Password").fill("some-password");
+    await page.getByLabel("Password", { exact: true }).fill("some-password");
     await page.getByRole("button", { name: "Sign in" }).click();
 
     await expect(
