@@ -20,14 +20,21 @@ metadata:
   - Secret in `.env.test`: `INBOUND_EMAIL_SECRET=e2e-test-inbound-secret`
   - Test file: `e2e/inbound-email.spec.ts`
 
-## Ticket routes (Phase 2+)
-- `GET /api/tickets` — requireAuth (any signed-in staff, NOT admin-only). Returns `{ tickets: [...] }`, ordered `createdAt DESC` (newest first).
-  - Each ticket: `{ id: number, subject: string, requesterEmail: string, requesterName: string, status: string, category: string | null, createdAt: string, updatedAt: string }`
+## Ticket routes (Phase 2+, all under `ticketsRouter` in `backend/src/routes/tickets.ts`, `requireAuth` applied to the whole router — any signed-in staff, NOT admin-only)
+- `GET /api/tickets` — supports `?sort=&order=&status=&category=&search=&page=&pageSize=` (see `ticketsQuerySchema` in `@helpdesk/core`). Returns `{ tickets, total, page, pageSize }`, default order `createdAt DESC`. Invalid `sort`/`status`/`category` values → 400.
+  - Each ticket: `{ id: number, subject: string, requesterEmail: string, requesterName: string, status: string, category: string | null, createdAt: string, updatedAt: string }` (no `assignedTo` on the list endpoint)
   - 401 with no session, 200 with any valid session (admin or agent)
-  - Tested in `e2e/tickets.spec.ts`
+- `GET /api/tickets/assignees` — registered before `/:id` so the literal path wins. Returns `{ users: [{ id, name, email }] }`, active (`deletedAt: null`) users only, `orderBy: name asc`. Any signed-in user (not admin-only).
+- `GET /api/tickets/:id` — non-integer id → 404 `{ error: "Ticket not found" }`; unknown id → same 404. Found: `{ ticket: { id, subject, requesterEmail, requesterName, status, category, createdAt, updatedAt, assignedTo: {id,name,email}|null, messages: [{id,direction,fromEmail,fromName,body,createdAt}] (oldest first) } }`.
+- `PATCH /api/tickets/:id` — body `{ assignedToId: string | null }` (Zod: `assignedToId` non-empty string or null). Assign/unassign a ticket.
+  - Non-integer/unknown ticket id → 404 `{ error: "Ticket not found" }` (checked before body validation only for the format check; body validated via `parseBody` first for non-integer ids... actually order in code: id format checked, then body parsed, then existence checked — so a bad id short-circuits to 404 before body validation)
+  - Non-existent/invalid `assignedToId` (must reference an active user, `deletedAt: null`) → 400 `{ error: "Assignee not found" }`
+  - `assignedToId: null` → unassigns, `ticket.assignedTo` becomes `null`
+  - Success → 200 `{ ticket: { ...same shape as GET :id minus messages, assignedTo included } }`
+  - 401 with no session cookie
+  - Tests: `e2e/tickets.spec.ts`, describe block "PATCH /api/tickets/:id — assignment"
 
-## Routes that do NOT exist yet
-- `GET /api/tickets/:id` — not yet implemented. Cannot assert per-ticket DB state (reopen-on-reply behavior) from e2e tests until this exists.
+Tested in `e2e/tickets.spec.ts` (list/shape/ordering/sort/filter/UI + assignment describe block above).
 
 ## Auth middleware
 - `requireAuth` (`backend/src/require-auth.ts`): resolves session, sets req.user/req.session, 401 if missing

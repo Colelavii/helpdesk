@@ -652,3 +652,101 @@ test.describe("/tickets page — filter bar UI", () => {
     await expect(page.getByRole("cell").filter({ hasText: /^open$/ }).first()).toBeVisible();
   });
 });
+
+// ─── API: PATCH /api/tickets/:id — assignment ────────────────────────────────
+
+test.describe("PATCH /api/tickets/:id — assignment", () => {
+  // Each test seeds its own ticket via the inbound-email webhook so tests never
+  // collide or depend on each other's state.
+  async function seedTicket(request: APIRequestContext) {
+    const suffix = uniqueSuffix();
+    const res = await request.post(WEBHOOK, {
+      headers: { "x-inbound-secret": SECRET! },
+      data: {
+        fromEmail: `assign-${suffix}@example.com`,
+        fromName: "Assign Student",
+        subject: `Assignment test ticket ${suffix}`,
+        body: "Please assign this ticket.",
+        messageId: `<assign-${suffix}@mail.example.com>`,
+      },
+    });
+    expect(res.status()).toBe(201);
+    const { ticketId } = (await res.json()) as { ticketId: number; status: string };
+    return ticketId;
+  }
+
+  test("assigns a ticket to a valid user, then unassigns with null", async ({
+    request,
+  }) => {
+    const ticketId = await seedTicket(request);
+
+    // GET /api/tickets/assignees returns active staff; the seeded admin will
+    // always be present, so the first entry is a valid assignee id.
+    const assigneesResp = await request.get(`${TICKETS_API}/assignees`);
+    expect(assigneesResp.status()).toBe(200);
+    const { users } = (await assigneesResp.json()) as {
+      users: Array<{ id: string; name: string; email: string }>;
+    };
+    expect(users.length).toBeGreaterThan(0);
+    const assigneeId = users[0].id;
+
+    const assignResp = await request.patch(`${TICKETS_API}/${ticketId}`, {
+      data: { assignedToId: assigneeId },
+    });
+    expect(assignResp.status()).toBe(200);
+    const assignBody = (await assignResp.json()) as {
+      ticket: { id: number; assignedTo: { id: string; name: string; email: string } | null };
+    };
+    expect(assignBody.ticket.id).toBe(ticketId);
+    expect(assignBody.ticket.assignedTo).not.toBeNull();
+    expect(assignBody.ticket.assignedTo?.id).toBe(assigneeId);
+
+    const unassignResp = await request.patch(`${TICKETS_API}/${ticketId}`, {
+      data: { assignedToId: null },
+    });
+    expect(unassignResp.status()).toBe(200);
+    const unassignBody = (await unassignResp.json()) as {
+      ticket: { id: number; assignedTo: { id: string } | null };
+    };
+    expect(unassignBody.ticket.id).toBe(ticketId);
+    expect(unassignBody.ticket.assignedTo).toBeNull();
+  });
+
+  test("rejects an invalid assignedToId with 400", async ({ request }) => {
+    const ticketId = await seedTicket(request);
+
+    const resp = await request.patch(`${TICKETS_API}/${ticketId}`, {
+      data: { assignedToId: "does-not-exist" },
+    });
+    expect(resp.status()).toBe(400);
+    const body = (await resp.json()) as { error: unknown };
+    expect(body.error).toBeDefined();
+  });
+
+  test("returns 404 for an unknown ticket id", async ({ request }) => {
+    const resp = await request.patch(`${TICKETS_API}/99999999`, {
+      data: { assignedToId: null },
+    });
+    expect(resp.status()).toBe(404);
+    const body = (await resp.json()) as { error: unknown };
+    expect(body.error).toBeDefined();
+  });
+
+  test("requires authentication (no session cookie) → 401", async ({
+    playwright,
+    request,
+  }) => {
+    const ticketId = await seedTicket(request);
+
+    const isolated = await playwright.request.newContext({
+      storageState: { cookies: [], origins: [] },
+    });
+
+    const resp = await isolated.patch(`${TICKETS_API}/${ticketId}`, {
+      data: { assignedToId: null },
+    });
+    expect(resp.status()).toBe(401);
+
+    await isolated.dispose();
+  });
+});
