@@ -2,7 +2,7 @@ import { useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { OnChangeFn, PaginationState, SortingState } from "@tanstack/react-table";
 import axios from "axios";
-import type { TicketsQuery } from "@helpdesk/core";
+import type { Ticket, TicketsQuery } from "@helpdesk/core";
 import { useDebounce } from "@/hooks/use-debounce";
 import {
   Card,
@@ -11,14 +11,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import TicketsTable, {
-  type TicketRow,
-  type TicketFilters,
-} from "@/components/TicketsTable";
+import TicketsTable, { type TicketFilters } from "@/components/TicketsTable";
 import ErrorMessage from "@/components/ErrorMessage";
 
 interface TicketsResponse {
-  tickets: TicketRow[];
+  tickets: Ticket[];
   total: number;
 }
 

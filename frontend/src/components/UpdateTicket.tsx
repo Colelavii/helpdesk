@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
-import { TicketStatus, TicketCategory } from "@helpdesk/core";
+import {
+  TicketStatus,
+  TicketCategory,
+  type TicketAssignee,
+  type TicketWithThread,
+} from "@helpdesk/core";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Select,
@@ -13,12 +18,6 @@ import Field from "@/components/Field";
 import ErrorMessage from "@/components/ErrorMessage";
 import { ticketQueryKey } from "@/lib/query-keys";
 
-interface Assignee {
-  id: string;
-  name: string;
-  email: string;
-}
-
 interface TicketUpdate {
   assignedToId?: string | null;
   status?: TicketStatus;
@@ -29,8 +28,8 @@ interface TicketUpdate {
 const UNASSIGNED = "__unassigned__";
 const UNCATEGORISED = "__uncategorised__";
 
-async function fetchAssignees(signal: AbortSignal): Promise<Assignee[]> {
-  const { data } = await axios.get<{ users: Assignee[] }>(
+async function fetchAssignees(signal: AbortSignal): Promise<TicketAssignee[]> {
+  const { data } = await axios.get<{ users: TicketAssignee[] }>(
     "/api/tickets/assignees",
     { signal },
   );
@@ -43,12 +42,7 @@ async function fetchAssignees(signal: AbortSignal): Promise<Assignee[]> {
 export default function UpdateTicket({
   ticket,
 }: {
-  ticket: {
-    id: number;
-    status: TicketStatus;
-    category: TicketCategory | null;
-    assignedTo: { id: string } | null;
-  };
+  ticket: TicketWithThread;
 }) {
   const queryClient = useQueryClient();
 

@@ -37,17 +37,7 @@ import {
 } from "@/components/ui/select";
 import { TextLink } from "@/components/ui/link";
 import { cn } from "@/lib/utils";
-import { TicketStatus, TicketCategory } from "@helpdesk/core";
-
-export interface TicketRow {
-  id: number;
-  subject: string;
-  requesterEmail: string;
-  requesterName: string;
-  status: TicketStatus;
-  category: TicketCategory | null;
-  createdAt: string;
-}
+import { TicketStatus, TicketCategory, type Ticket } from "@helpdesk/core";
 
 export interface TicketFilters {
   status?: TicketStatus;
@@ -76,7 +66,7 @@ export const statusVariant: Record<
 
 // Column ids match `ticketSortFields` in @helpdesk/core so a header's id is
 // exactly the `sort` param the server orders by.
-const columns: ColumnDef<TicketRow>[] = [
+const columns: ColumnDef<Ticket>[] = [
   {
     id: "subject",
     accessorKey: "subject",
@@ -129,7 +119,7 @@ const columns: ColumnDef<TicketRow>[] = [
   },
 ];
 
-const EMPTY: TicketRow[] = [];
+const EMPTY: Ticket[] = [];
 
 // A sentinel value used by the Select components to represent "no filter"
 // (Select requires a string value; empty string maps to `undefined` on output).
@@ -147,7 +137,7 @@ export default function TicketsTable({
   pageCount,
   total,
 }: {
-  tickets?: TicketRow[];
+  tickets?: Ticket[];
   isPending?: boolean;
   sorting: SortingState;
   onSortingChange: OnChangeFn<SortingState>;

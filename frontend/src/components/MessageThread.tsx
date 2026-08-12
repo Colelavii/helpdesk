@@ -1,15 +1,7 @@
+import type { TicketWithThread } from "@helpdesk/core";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-
-export interface TicketMessage {
-  id: number;
-  direction: "inbound" | "outbound";
-  fromEmail: string;
-  fromName: string;
-  body: string;
-  createdAt: string;
-}
 
 const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
@@ -17,12 +9,11 @@ const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
 });
 
 // Takes the whole ticket rather than its messages array so callers pass the
-// object they already hold; the prop is structural, so any ticket shape with a
-// messages thread satisfies it.
+// object they already hold.
 export default function MessageThread({
   ticket,
 }: {
-  ticket: { messages: TicketMessage[] };
+  ticket: TicketWithThread;
 }) {
   return (
     <div className="space-y-3">

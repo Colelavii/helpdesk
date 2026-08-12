@@ -3,6 +3,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient } from "@tanstack/react-query";
 import axios from "axios";
+import { TicketStatus, TicketCategory, type Ticket } from "@helpdesk/core";
 import ReplyForm from "./ReplyForm";
 import { renderWithClient } from "../test/render";
 
@@ -20,9 +21,20 @@ type User = ReturnType<typeof userEvent.setup>;
 
 const TICKET_ID = 42;
 
+const ticket: Ticket = {
+  id: TICKET_ID,
+  subject: "Cannot access the portal",
+  requesterEmail: "sam@example.com",
+  requesterName: "Sam Student",
+  status: TicketStatus.open,
+  category: TicketCategory.technical,
+  createdAt: "2024-03-20T10:00:00.000Z",
+  updatedAt: "2024-03-20T10:00:00.000Z",
+};
+
 function renderReplyForm(): User {
   const user = userEvent.setup();
-  renderWithClient(<ReplyForm ticket={{ id: TICKET_ID }} />);
+  renderWithClient(<ReplyForm ticket={ticket} />);
   return user;
 }
 

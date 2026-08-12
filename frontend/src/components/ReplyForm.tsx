@@ -2,7 +2,11 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
-import { createMessageSchema, type CreateMessageInput } from "@helpdesk/core";
+import {
+  createMessageSchema,
+  type CreateMessageInput,
+  type Ticket,
+} from "@helpdesk/core";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,7 +16,7 @@ import { ticketQueryKey } from "@/lib/query-keys";
 
 // Takes the whole ticket (like MessageThread) rather than a bare id, so callers
 // pass the object they already hold.
-export default function ReplyForm({ ticket }: { ticket: { id: number } }) {
+export default function ReplyForm({ ticket }: { ticket: Ticket }) {
   const queryClient = useQueryClient();
 
   const {

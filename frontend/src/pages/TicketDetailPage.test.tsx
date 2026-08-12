@@ -3,7 +3,12 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route, Routes } from "react-router-dom";
 import axios from "axios";
-import { TicketStatus, TicketCategory } from "@helpdesk/core";
+import {
+  TicketStatus,
+  TicketCategory,
+  type TicketAssignee,
+  type TicketWithThread,
+} from "@helpdesk/core";
 import TicketDetailPage from "./TicketDetailPage";
 import { renderWithClient } from "../test/render";
 
@@ -19,7 +24,7 @@ function mockPost(): PostMock {
   return vi.spyOn(axios, "post") as unknown as PostMock;
 }
 
-const sampleTicket = {
+const sampleTicket: TicketWithThread = {
   id: 7,
   subject: "Cannot access the portal",
   requesterEmail: "sam@example.com",
@@ -49,7 +54,7 @@ const sampleTicket = {
   ],
 };
 
-const sampleAssignees = [
+const sampleAssignees: TicketAssignee[] = [
   { id: "u1", name: "Agent Smith", email: "smith@helpdesk.test" },
   { id: "u2", name: "Dana Agent", email: "dana@helpdesk.test" },
 ];

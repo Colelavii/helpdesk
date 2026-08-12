@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axios from "axios";
-import { TicketStatus, TicketCategory } from "@helpdesk/core";
+import { TicketStatus, TicketCategory, type Ticket } from "@helpdesk/core";
 import TicketsPage from "./TicketsPage";
-import TicketsTable, { type TicketFilters, type TicketRow } from "@/components/TicketsTable";
+import TicketsTable, { type TicketFilters } from "@/components/TicketsTable";
 import { renderWithClient } from "../test/render";
 
 type GetMock = Mock<(url: string, config?: unknown) => Promise<unknown>>;
@@ -13,7 +13,7 @@ function mockGet(): GetMock {
   return vi.spyOn(axios, "get") as unknown as GetMock;
 }
 
-const sampleTickets = [
+const sampleTickets: Ticket[] = [
   {
     id: 2,
     subject: "Refund for duplicate charge",
@@ -22,6 +22,7 @@ const sampleTickets = [
     status: TicketStatus.open,
     category: TicketCategory.refund,
     createdAt: "2024-03-20T10:00:00.000Z",
+    updatedAt: "2024-03-20T10:00:00.000Z",
   },
   {
     id: 1,
@@ -31,6 +32,7 @@ const sampleTickets = [
     status: TicketStatus.resolved,
     category: null,
     createdAt: "2024-01-15T10:00:00.000Z",
+    updatedAt: "2024-01-15T10:00:00.000Z",
   },
 ];
 
@@ -281,7 +283,7 @@ describe("TicketsPage — search", () => {
 describe("TicketsTable — filter bar rendering", () => {
   const noop = () => {};
   const defaultProps = {
-    tickets: sampleTickets as TicketRow[],
+    tickets: sampleTickets,
     sorting: [{ id: "createdAt", desc: true }],
     onSortingChange: () => {},
     filters: {} as TicketFilters,

@@ -1,3 +1,4 @@
+import type { Ticket } from "@helpdesk/core";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { linkVariants } from "@/components/ui/link";
 import Field from "@/components/Field";
@@ -11,16 +12,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
 // The ticket's fixed facts — what it's about, who raised it, and when. The
 // conversation lives in MessageThread and the editable fields in the detail
 // page's sidebar. Takes the whole ticket so callers pass the object they hold.
-export default function TicketDetail({
-  ticket,
-}: {
-  ticket: {
-    subject: string;
-    requesterName: string;
-    requesterEmail: string;
-    createdAt: string;
-  };
-}) {
+export default function TicketDetail({ ticket }: { ticket: Ticket }) {
   return (
     <Card>
       <CardHeader>
