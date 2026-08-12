@@ -60,42 +60,12 @@ function rowByEmail(
   return page.getByRole("row").filter({ has: page.getByText(email, { exact: true }) });
 }
 
-// ─── Read / List ─────────────────────────────────────────────────────────────
-
-test.describe("Users page — list", () => {
-  test("renders the page heading, card title, and column headers", async ({
-    page,
-  }) => {
-    await page.goto("/users");
-
-    await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
-
-    // CardTitle renders as a <div>, not a heading — use getByText.
-    await expect(page.getByText("Team members")).toBeVisible();
-
-    const table = page.getByRole("table");
-    await expect(
-      table.getByRole("columnheader", { name: "Name" }),
-    ).toBeVisible();
-    await expect(
-      table.getByRole("columnheader", { name: "Email" }),
-    ).toBeVisible();
-    await expect(
-      table.getByRole("columnheader", { name: "Role" }),
-    ).toBeVisible();
-    await expect(
-      table.getByRole("columnheader", { name: "Joined" }),
-    ).toBeVisible();
-  });
-
-  test("seeded admin row is present in the table", async ({ page }) => {
-    await page.goto("/users");
-    // The admin seeded from .env.test is always present.
-    await expect(
-      rowByEmail(page, "admin@example.com"),
-    ).toBeVisible();
-  });
-});
+// Page chrome (heading, card title, column headers), the empty/loading/error
+// states, and which rows expose a delete button are covered against a mocked
+// network by frontend/src/pages/UsersPage.test.tsx. Dialog validation, payloads,
+// and error handling are covered by CreateUserDialog / UserFormDialog /
+// DeleteUserDialog specs. What's left here is the real Better Auth + DB write
+// path, which none of those can exercise.
 
 // ─── Create ───────────────────────────────────────────────────────────────────
 
@@ -208,33 +178,4 @@ test.describe("Users page — delete", () => {
     await expect(rowByEmail(page, email)).not.toBeVisible();
   });
 
-  test("cancel leaves the user intact", async ({ page }) => {
-    const { name, email } = uniqueUser("Cancel Delete");
-
-    await page.goto("/users");
-    await createUser(page, { name, email, password: "securepassword1" });
-
-    // Open delete dialog then cancel.
-    await page.getByRole("button", { name: `Delete ${name}` }).click();
-    const alertDialog = page.getByRole("alertdialog", { name: "Delete user" });
-    await expect(alertDialog).toBeVisible();
-    await alertDialog.getByRole("button", { name: "Cancel" }).click();
-
-    // Dialog closes; the row is still there.
-    await expect(alertDialog).not.toBeVisible();
-    await expect(rowByEmail(page, email)).toBeVisible();
-  });
-
-  test("admin row has no delete button (admins cannot be deleted)", async ({
-    page,
-  }) => {
-    await page.goto("/users");
-
-    // The seeded admin row must not render a delete button.
-    const adminRow = rowByEmail(page, "admin@example.com");
-    await expect(adminRow).toBeVisible();
-    await expect(
-      adminRow.getByRole("button", { name: /^Delete / }),
-    ).not.toBeVisible();
-  });
 });

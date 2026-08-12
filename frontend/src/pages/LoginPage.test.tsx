@@ -80,3 +80,58 @@ describe("LoginPage — remember me", () => {
     expect(localStorage.getItem(KEY)).toBeNull();
   });
 });
+
+// Field-level validation runs entirely client-side (react-hook-form + the shared
+// zod schema), so it belongs here rather than in the e2e suite. Rejecting bad
+// *credentials* is a server concern and stays in e2e/auth.spec.ts.
+describe("LoginPage — field validation", () => {
+  it("rejects a missing email without calling the auth client", async () => {
+    const user = userEvent.setup();
+    renderWithClient(<LoginPage />);
+
+    await user.type(screen.getByLabelText("Password", { exact: true }), "pw");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(
+      await screen.findByText("Enter a valid email address"),
+    ).toBeInTheDocument();
+    expect(signInEmail).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed email without calling the auth client", async () => {
+    const user = userEvent.setup();
+    renderWithClient(<LoginPage />);
+
+    await user.type(screen.getByLabelText("Email"), "not-an-email");
+    await user.type(screen.getByLabelText("Password", { exact: true }), "pw");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(
+      await screen.findByText("Enter a valid email address"),
+    ).toBeInTheDocument();
+    expect(signInEmail).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing password without calling the auth client", async () => {
+    const user = userEvent.setup();
+    renderWithClient(<LoginPage />);
+
+    await user.type(screen.getByLabelText("Email"), "admin@example.com");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByText("Password is required")).toBeInTheDocument();
+    expect(signInEmail).not.toHaveBeenCalled();
+  });
+
+  it("reports the email error first when both fields are empty", async () => {
+    const user = userEvent.setup();
+    renderWithClient(<LoginPage />);
+
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(
+      await screen.findByText("Enter a valid email address"),
+    ).toBeInTheDocument();
+    expect(signInEmail).not.toHaveBeenCalled();
+  });
+});

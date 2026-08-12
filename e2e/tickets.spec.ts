@@ -309,25 +309,12 @@ test.describe("GET /api/tickets — server-side sorting", () => {
 // ─── UI: /tickets page ────────────────────────────────────────────────────────
 
 test.describe("/tickets page — UI", () => {
-  // All tests here rely on the default project-level storageState (admin).
-
-  test("page heading and card title are visible", async ({ page }) => {
-    await page.goto("/tickets");
-    await expect(page.getByRole("heading", { name: "Tickets" })).toBeVisible();
-    // CardTitle renders as a non-heading element. Use exact:true to avoid matching
-    // the page description "Student support requests assigned to your team."
-    await expect(page.getByText("Support requests", { exact: true })).toBeVisible();
-  });
-
-  test("table column headers are visible", async ({ page }) => {
-    await page.goto("/tickets");
-    const table = page.getByRole("table");
-    await expect(table.getByRole("columnheader", { name: "Subject" })).toBeVisible();
-    await expect(table.getByRole("columnheader", { name: "Requester" })).toBeVisible();
-    await expect(table.getByRole("columnheader", { name: "Status" })).toBeVisible();
-    await expect(table.getByRole("columnheader", { name: "Category" })).toBeVisible();
-    await expect(table.getByRole("columnheader", { name: "Received" })).toBeVisible();
-  });
+  // Relies on the default project-level storageState (admin).
+  //
+  // Only the full-stack path lives here: a ticket seeded through the real
+  // webhook must reach the rendered table. Headings, column headers, row
+  // ordering, the filter bar, and pagination are all covered by
+  // frontend/src/pages/TicketsPage.test.tsx against a mocked network.
 
   test("seeded ticket's subject and requester email appear in the table", async ({
     page,
@@ -364,67 +351,6 @@ test.describe("/tickets page — UI", () => {
     ).toBeVisible();
   });
 
-  test("newer seeded ticket's row appears above older one", async ({
-    page,
-    request,
-  }) => {
-    const suffix1 = uniqueSuffix();
-    const subject1 = `UI Order Older ${suffix1}`;
-    const seed1 = await request.post(WEBHOOK, {
-      headers: { "x-inbound-secret": SECRET },
-      data: {
-        fromEmail: `ui-order-older-${suffix1}@example.com`,
-        fromName: "UI Order Older",
-        subject: subject1,
-        body: "Older ticket.",
-        messageId: `<ui-order-older-${suffix1}@mail.example.com>`,
-      },
-    });
-    expect(seed1.status()).toBe(201);
-
-    const suffix2 = uniqueSuffix();
-    const subject2 = `UI Order Newer ${suffix2}`;
-    const seed2 = await request.post(WEBHOOK, {
-      headers: { "x-inbound-secret": SECRET },
-      data: {
-        fromEmail: `ui-order-newer-${suffix2}@example.com`,
-        fromName: "UI Order Newer",
-        subject: subject2,
-        body: "Newer ticket.",
-        messageId: `<ui-order-newer-${suffix2}@mail.example.com>`,
-      },
-    });
-    expect(seed2.status()).toBe(201);
-
-    await page.goto("/tickets");
-
-    // Locate both rows by subject cell text.
-    const row1 = page.getByRole("row").filter({
-      has: page.getByRole("cell", { name: subject1 }),
-    });
-    const row2 = page.getByRole("row").filter({
-      has: page.getByRole("cell", { name: subject2 }),
-    });
-    await expect(row1).toBeVisible();
-    await expect(row2).toBeVisible();
-
-    // Compare DOM positions: the newer ticket (subject2) must appear before the
-    // older one (subject1) in the rendered table.
-    const rows = page.getByRole("row");
-    const allRows = await rows.all();
-    let idx1 = -1;
-    let idx2 = -1;
-    for (let i = 0; i < allRows.length; i++) {
-      const text = await allRows[i].textContent();
-      if (text?.includes(subject1)) idx1 = i;
-      if (text?.includes(subject2)) idx2 = i;
-    }
-
-    expect(idx1).toBeGreaterThanOrEqual(0);
-    expect(idx2).toBeGreaterThanOrEqual(0);
-    // Newer ticket (subject2) must have a lower row index (appears first).
-    expect(idx2).toBeLessThan(idx1);
-  });
 });
 
 // ─── API: server-side filtering ───────────────────────────────────────────────
@@ -549,109 +475,11 @@ test.describe("GET /api/tickets — server-side filtering", () => {
   });
 });
 
-// ─── UI: /tickets page — filter bar ──────────────────────────────────────────
-
-test.describe("/tickets page — filter bar UI", () => {
-  test("status and category filter selects are visible", async ({ page }) => {
-    await page.goto("/tickets");
-    await expect(
-      page.getByRole("combobox", { name: /filter by status/i }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("combobox", { name: /filter by category/i }),
-    ).toBeVisible();
-  });
-
-  test("Clear button is not visible before any filter is applied", async ({
-    page,
-  }) => {
-    await page.goto("/tickets");
-    // Wait for the table to load before asserting absence of Clear.
-    await expect(page.getByRole("table")).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /clear all filters/i }),
-    ).not.toBeVisible();
-  });
-
-  test("selecting a status filter shows only matching rows and reveals Clear", async ({
-    page,
-  }) => {
-    await page.goto("/tickets");
-    await expect(page.getByRole("table")).toBeVisible();
-
-    // Open the status select and choose "Resolved".
-    await page.getByRole("combobox", { name: /filter by status/i }).click();
-    await page.getByRole("option", { name: /^resolved$/i }).click();
-
-    // Every visible status badge must say "resolved".
-    const statusCells = page.getByRole("cell").filter({
-      has: page.locator('[data-slot="badge"]'),
-    });
-    const count = await statusCells.count();
-    expect(count).toBeGreaterThan(0);
-    for (let i = 0; i < count; i++) {
-      await expect(statusCells.nth(i)).toHaveText("resolved");
-    }
-
-    // Clear button appears once a filter is active.
-    await expect(
-      page.getByRole("button", { name: /clear all filters/i }),
-    ).toBeVisible();
-  });
-
-  test("selecting a category filter shows only matching rows", async ({
-    page,
-  }) => {
-    await page.goto("/tickets");
-    await expect(page.getByRole("table")).toBeVisible();
-
-    await page.getByRole("combobox", { name: /filter by category/i }).click();
-    await page.getByRole("option", { name: /^technical$/i }).click();
-
-    // Wait for the filtered results to render before asserting. keepPreviousData
-    // briefly shows the prior page; with pagination that page can contain no
-    // general/refund cells, so the absence checks alone wouldn't wait for the
-    // refetch. Requiring a technical cell first guarantees the new data is in.
-    await expect(
-      page.getByRole("cell", { name: /^technical$/i }).first(),
-    ).toBeVisible();
-
-    // Every category cell must say "technical".
-    const categoryCells = page
-      .getByRole("cell")
-      .filter({ hasText: /^technical$/i });
-    // Also confirm no cells show "general" or "refund".
-    await expect(page.getByRole("cell", { name: /^general$/i })).toHaveCount(0);
-    await expect(page.getByRole("cell", { name: /^refund$/i })).toHaveCount(0);
-    expect(await categoryCells.count()).toBeGreaterThan(0);
-  });
-
-  test("Clear button resets filters and shows all tickets again", async ({
-    page,
-  }) => {
-    await page.goto("/tickets");
-    await expect(page.getByRole("table")).toBeVisible();
-
-    // Apply a filter.
-    await page.getByRole("combobox", { name: /filter by status/i }).click();
-    await page.getByRole("option", { name: /^closed$/i }).click();
-
-    // Confirm filter is active.
-    await expect(
-      page.getByRole("button", { name: /clear all filters/i }),
-    ).toBeVisible();
-
-    // Clear the filter.
-    await page.getByRole("button", { name: /clear all filters/i }).click();
-
-    // Clear button should disappear and other status values should return.
-    await expect(
-      page.getByRole("button", { name: /clear all filters/i }),
-    ).not.toBeVisible();
-    // At least one "open" badge confirms the full list is back.
-    await expect(page.getByRole("cell").filter({ hasText: /^open$/ }).first()).toBeVisible();
-  });
-});
+// The filter bar's UI behaviour (control rendering, Clear visibility/reset, and
+// the query params each change sends) is covered by
+// frontend/src/pages/TicketsPage.test.tsx; the server-side enforcement of those
+// params is covered by the API tests above. Driving both halves through the
+// browser again adds no coverage, so there are no filter-bar UI tests here.
 
 // ─── API: PATCH /api/tickets/:id — assignment ────────────────────────────────
 

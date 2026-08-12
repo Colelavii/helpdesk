@@ -76,6 +76,30 @@ Playwright drives the full stack (frontend + backend + DB) from the **repo root*
 
 **Prefer component tests (Vitest) as the default; use e2e only when necessary.** Component tests are fast and cover most behavior — rendering, UI states, validation, and mutations with the network mocked. Reserve e2e for cases that genuinely need the real full stack: auth/session flows, server-side enforcement (route guards, status codes), or a critical cross-boundary path (e.g. the inbound-email webhook, ticket intake). Do **not** add e2e *proactively* just because a user-facing flow shipped — cover it with component tests instead, and only reach for e2e when a case truly warrants it or the user asks.
 
+### The e2e minimality rule
+
+**If a component test (or a plain unit test) can cover a behaviour, it must not also be an e2e test.** Every e2e case has to justify itself by testing something that is impossible to test at a lower level. Apply this both when adding tests and when touching an existing spec — if you notice redundancy, delete it.
+
+An e2e test earns its place only if it depends on at least one of:
+
+- **A real session/cookie** — sign-in, sign-out, session persistence across reload, tampered or absent cookies, role-gated redirects driven by an actual server session.
+- **Server-side enforcement** — status codes and rejections the server decides: 401/403, 404 from `parseId`, 400 from a Zod body/query guard, whitelists (e.g. the `sort` field allow-list).
+- **Real persistence** — a write that must survive a reload or be visible through a second request; anything that must round-trip through Postgres (soft deletes, Better Auth password hashing, webhook threading/idempotency).
+- **A genuine cross-boundary path** — the inbound-email webhook creating a ticket that then renders in the browser; one smoke test per flow, not one per assertion.
+
+Do **not** write an e2e test for any of these — they belong in `frontend/src/**/*.test.tsx`:
+
+- Static rendering: headings, card titles, column headers, labels, "this control is visible".
+- Client-side form validation and its messages (react-hook-form + zod), including "no request was sent".
+- Loading skeletons, empty states, and error copy for a failed request (mock the rejection instead).
+- Which query params a control sends — assert the request, and let a separate API-level e2e test prove the server honours them. Don't drive both halves through the browser.
+- Dialog open/close/cancel behaviour, and row-level affordances (e.g. which rows show a delete button).
+- Anything asserting CSS classes or purely visual styling.
+
+When trimming an e2e test that covers real behaviour with no component-test equivalent, **port it down rather than dropping it** — move the case into the relevant `*.test.tsx`, confirm it passes there, then delete the e2e version. Never reduce total coverage in the name of this rule.
+
+Keep the reasoning discoverable: when a spec deliberately omits an obvious case, leave a short comment naming the component test that owns it (see the header comments in `e2e/ticket-detail.spec.ts` and `e2e/users.spec.ts`).
+
 **When you do write e2e, always use the `playwright-e2e-author` agent** — launch it via the Agent tool (`subagent_type: "playwright-e2e-author"`); never hand-write Playwright specs inline. The agent owns the authoritative harness details (test DB on port 5433, isolated ports, `globalSetup` seeding, `.env.test` credentials, run commands) and the project's testing conventions; its definition lives at `.claude/agents/playwright-e2e-author.md`.
 
 ## Testing (component)

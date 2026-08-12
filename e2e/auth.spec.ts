@@ -99,9 +99,13 @@ test.describe("Logout", () => {
   });
 });
 
-// ─── Login: validation errors ────────────────────────────────────────────────
+// ─── Login: credential errors ────────────────────────────────────────────────
+//
+// Only rejections the *server* decides live here. Field-level validation
+// (missing/malformed email, missing password) is client-side react-hook-form +
+// zod and is covered by frontend/src/pages/LoginPage.test.tsx.
 
-test.describe("Login — validation errors", () => {
+test.describe("Login — credential errors", () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
   test("wrong password shows credential error", async ({ page }) => {
@@ -125,50 +129,6 @@ test.describe("Login — validation errors", () => {
     await expect(page).toHaveURL("/login");
   });
 
-  test("empty email shows zod validation message", async ({ page }) => {
-    await page.goto("/login");
-    // Leave email blank, fill password, submit.
-    await page.getByLabel("Password", { exact: true }).fill("some-password");
-    await page.getByRole("button", { name: "Sign in" }).click();
-
-    // react-hook-form + zod renders the field error inline; no network call is made.
-    await expect(
-      page.getByText("Enter a valid email address"),
-    ).toBeVisible();
-    await expect(page).toHaveURL("/login");
-  });
-
-  test("empty password shows zod validation message", async ({ page }) => {
-    await page.goto("/login");
-    await page.getByLabel("Email").fill("admin@example.com");
-    // Leave password blank.
-    await page.getByRole("button", { name: "Sign in" }).click();
-
-    await expect(page.getByText("Password is required")).toBeVisible();
-    await expect(page).toHaveURL("/login");
-  });
-
-  test("malformed email shows zod validation message", async ({ page }) => {
-    await page.goto("/login");
-    await page.getByLabel("Email").fill("not-an-email");
-    await page.getByLabel("Password", { exact: true }).fill("some-password");
-    await page.getByRole("button", { name: "Sign in" }).click();
-
-    await expect(
-      page.getByText("Enter a valid email address"),
-    ).toBeVisible();
-    await expect(page).toHaveURL("/login");
-  });
-
-  test("both fields empty shows email validation first", async ({ page }) => {
-    await page.goto("/login");
-    await page.getByRole("button", { name: "Sign in" }).click();
-
-    await expect(
-      page.getByText("Enter a valid email address"),
-    ).toBeVisible();
-    await expect(page).toHaveURL("/login");
-  });
 });
 
 // ─── Client-side route guards ────────────────────────────────────────────────
@@ -301,19 +261,6 @@ test.describe("Server-side enforcement — /api/health (public)", () => {
 test.describe("Sign-up is disabled", () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  test("no sign-up link or button visible on the login page", async ({
-    page,
-  }) => {
-    await page.goto("/login");
-    // There must be no way to navigate to sign-up from the login page.
-    await expect(
-      page.getByRole("link", { name: /sign.?up|register|create account/i }),
-    ).not.toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /sign.?up|register/i }),
-    ).not.toBeVisible();
-  });
-
   test("POST /api/auth/sign-up/email returns an error (sign-up disabled server-side)", async ({
     request,
   }) => {
@@ -377,18 +324,6 @@ test.describe("Session edge cases", () => {
     const apiResponse = await context.request.get(`${BACKEND}/api/me`);
     expect(apiResponse.status()).toBe(401);
 
-    await context.close();
-  });
-
-  test("absent session cookie redirects protected routes to /login", async ({
-    browser,
-  }) => {
-    // Explicitly no storageState — even though the chromium project sets a
-    // default admin storageState, we want to test the unauthenticated path.
-    const context = await browser.newContext({ storageState: undefined });
-    const page = await context.newPage();
-    await page.goto("/tickets");
-    await expect(page).toHaveURL("/login");
     await context.close();
   });
 });
