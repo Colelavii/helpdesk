@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import ErrorMessage, { FieldError } from "@/components/ErrorMessage";
+import { apiErrorMessage } from "@/lib/api-error";
 
 interface EditableUser {
   id: string;
@@ -66,12 +68,12 @@ export default function UserFormDialog(props: UserFormDialogProps) {
       reset(buildDefaults());
     },
     onError: (error) => {
-      const message =
-        axios.isAxiosError(error) &&
-        typeof error.response?.data?.error === "string"
-          ? error.response.data.error
-          : `Unable to ${isEdit ? "update" : "create"} the user. Please try again.`;
-      setError("root", { message });
+      setError("root", {
+        message: apiErrorMessage(
+          error,
+          `Unable to ${isEdit ? "update" : "create"} the user. Please try again.`,
+        ),
+      });
     },
   });
 
@@ -118,9 +120,7 @@ export default function UserFormDialog(props: UserFormDialogProps) {
               aria-invalid={!!errors.name}
               {...register("name")}
             />
-            {errors.name && (
-              <p className="text-sm text-destructive">{errors.name.message}</p>
-            )}
+            <FieldError>{errors.name?.message}</FieldError>
           </div>
 
           <div className="space-y-2">
@@ -132,9 +132,7 @@ export default function UserFormDialog(props: UserFormDialogProps) {
               aria-invalid={!!errors.email}
               {...register("email")}
             />
-            {errors.email && (
-              <p className="text-sm text-destructive">{errors.email.message}</p>
-            )}
+            <FieldError>{errors.email?.message}</FieldError>
           </div>
 
           <div className="space-y-2">
@@ -147,9 +145,7 @@ export default function UserFormDialog(props: UserFormDialogProps) {
               {...register("password")}
             />
             {errors.password ? (
-              <p className="text-sm text-destructive">
-                {errors.password.message}
-              </p>
+              <FieldError>{errors.password.message}</FieldError>
             ) : (
               isEdit && (
                 <p className="text-sm text-muted-foreground">
@@ -159,11 +155,7 @@ export default function UserFormDialog(props: UserFormDialogProps) {
             )}
           </div>
 
-          {errors.root && (
-            <p role="alert" className="text-sm text-destructive">
-              {errors.root.message}
-            </p>
-          )}
+          <ErrorMessage>{errors.root?.message}</ErrorMessage>
 
           <DialogFooter>
             <Button type="submit" disabled={isSubmitting}>

@@ -23,7 +23,7 @@ export default function NavBar() {
           Tickets
         </TextLink>
         {session?.user.role === Role.admin && (
-          <TextLink to="/users" variant="nav">
+          <TextLink to="/users" target="_blank" variant="nav">
             Users
           </TextLink>
         )}

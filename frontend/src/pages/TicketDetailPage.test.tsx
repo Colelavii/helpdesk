@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Route, Routes } from "react-router-dom";
 import axios from "axios";
 import { TicketStatus, TicketCategory } from "@helpdesk/core";
@@ -10,6 +11,12 @@ type GetMock = Mock<(url: string, config?: unknown) => Promise<unknown>>;
 
 function mockGet(): GetMock {
   return vi.spyOn(axios, "get") as unknown as GetMock;
+}
+
+type PostMock = Mock<(url: string, body?: unknown) => Promise<unknown>>;
+
+function mockPost(): PostMock {
+  return vi.spyOn(axios, "post") as unknown as PostMock;
 }
 
 const sampleTicket = {
@@ -171,5 +178,57 @@ describe("TicketDetailPage", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Unable to load this ticket.");
+  });
+
+  it("posts a reply and re-fetches the thread", async () => {
+    const get = mockDetailGet();
+    const post = mockPost().mockResolvedValue({
+      data: {
+        message: {
+          id: 3,
+          direction: "outbound",
+          fromEmail: "agent@helpdesk.test",
+          fromName: "Support Agent",
+          body: "Here's how to fix it.",
+          createdAt: "2024-03-20T12:00:00.000Z",
+        },
+      },
+    });
+
+    const user = userEvent.setup();
+    renderDetail("7");
+    await screen.findByRole("heading", { name: "Cannot access the portal" });
+
+    await user.type(
+      screen.getByRole("textbox", { name: /reply message/i }),
+      "Here's how to fix it.",
+    );
+    await user.click(screen.getByRole("button", { name: /send reply/i }));
+
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/tickets/7/messages", {
+        body: "Here's how to fix it.",
+      }),
+    );
+    // A successful reply invalidates the ticket query, so it re-fetches.
+    await waitFor(() =>
+      expect(
+        get.mock.calls.filter(([url]) => url === "/api/tickets/7").length,
+      ).toBeGreaterThan(1),
+    );
+  });
+
+  it("blocks an empty reply and does not call the API", async () => {
+    mockDetailGet();
+    const post = mockPost();
+
+    const user = userEvent.setup();
+    renderDetail("7");
+    await screen.findByRole("heading", { name: "Cannot access the portal" });
+
+    await user.click(screen.getByRole("button", { name: /send reply/i }));
+
+    expect(await screen.findByText(/reply can't be empty/i)).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { prisma } from "../prisma.ts";
+import { normalizeSubject } from "./normalize-subject.ts";
 
 // The provider-agnostic shape an inbound email is normalized to before it
 // becomes a ticket. A future Mailgun webhook adapter maps Mailgun's fields onto
@@ -7,7 +8,12 @@ import { prisma } from "../prisma.ts";
 export const inboundEmailSchema = z.object({
   fromEmail: z.email().trim(),
   fromName: z.string().trim().min(1, "fromName is required"),
-  subject: z.string().trim().default("(no subject)"),
+  // Normalize the customer's subject: strip Re:/Fwd: prefixes, collapse
+  // whitespace, and fall back to "(no subject)" (also when the field is absent).
+  subject: z
+    .string()
+    .optional()
+    .transform((value) => normalizeSubject(value ?? "")),
   body: z.string().default(""),
   messageId: z.string().trim().optional(),
   inReplyTo: z.string().trim().optional(),

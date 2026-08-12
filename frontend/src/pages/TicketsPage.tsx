@@ -15,6 +15,7 @@ import TicketsTable, {
   type TicketRow,
   type TicketFilters,
 } from "@/components/TicketsTable";
+import ErrorMessage from "@/components/ErrorMessage";
 
 interface TicketsResponse {
   tickets: TicketRow[];
@@ -111,9 +112,7 @@ export default function TicketsPage() {
               total={total}
             />
           ) : isError ? (
-            <p role="alert" className="text-sm text-destructive">
-              Unable to load tickets.
-            </p>
+            <ErrorMessage>Unable to load tickets.</ErrorMessage>
           ) : (
             <TicketsTable
               tickets={data.tickets}

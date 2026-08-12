@@ -14,6 +14,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import ErrorMessage from "@/components/ErrorMessage";
+import { apiErrorMessage } from "@/lib/api-error";
 
 interface DeletableUser {
   id: string;
@@ -33,10 +35,7 @@ export default function DeleteUserDialog({ user }: { user: DeletableUser }) {
     },
     onError: (error) => {
       setErrorMessage(
-        axios.isAxiosError(error) &&
-          typeof error.response?.data?.error === "string"
-          ? error.response.data.error
-          : "Unable to delete the user. Please try again.",
+        apiErrorMessage(error, "Unable to delete the user. Please try again."),
       );
     },
   });
@@ -69,11 +68,7 @@ export default function DeleteUserDialog({ user }: { user: DeletableUser }) {
             longer appear in the list or be able to sign in.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        {errorMessage && (
-          <p role="alert" className="text-sm text-destructive">
-            {errorMessage}
-          </p>
-        )}
+        <ErrorMessage>{errorMessage}</ErrorMessage>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction

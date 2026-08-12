@@ -1,9 +1,15 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
-import { ticketsQuerySchema, TicketStatus, TicketCategory } from "@helpdesk/core";
+import {
+  ticketsQuerySchema,
+  createMessageSchema,
+  TicketStatus,
+  TicketCategory,
+} from "@helpdesk/core";
 import { requireAuth } from "../require-auth.ts";
 import { prisma } from "../prisma.ts";
 import { parseBody } from "../parse-body.ts";
+import { parseId } from "../parse-id.ts";
 import type { Prisma } from "../generated/prisma/client.ts";
 
 export const ticketsRouter = Router();
@@ -82,11 +88,8 @@ ticketsRouter.get("/assignees", async (_req: Request, res: Response) => {
 ticketsRouter.get(
   "/:id",
   async (req: Request<{ id: string }>, res: Response) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) {
-      res.status(404).json({ error: "Ticket not found" });
-      return;
-    }
+    const id = parseId(req.params.id, res, "Ticket not found");
+    if (id === null) return;
 
     const ticket = await prisma.ticket.findUnique({
       where: { id },
@@ -136,11 +139,8 @@ const updateTicketSchema = z.object({
 ticketsRouter.patch(
   "/:id",
   async (req: Request<{ id: string }>, res: Response) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) {
-      res.status(404).json({ error: "Ticket not found" });
-      return;
-    }
+    const id = parseId(req.params.id, res, "Ticket not found");
+    if (id === null) return;
 
     const data = parseBody(updateTicketSchema, req.body, res);
     if (!data) return;
@@ -190,5 +190,56 @@ ticketsRouter.patch(
     });
 
     res.json({ ticket });
+  },
+);
+
+// Record an agent reply on a ticket. Stored as an outbound message attributed to
+// the signed-in agent (direction distinguishes agent replies from student
+// mail). No email is sent yet — Mailgun delivery is wired in Phase 4.
+ticketsRouter.post(
+  "/:id/messages",
+  async (req: Request<{ id: string }>, res: Response) => {
+    const id = parseId(req.params.id, res, "Ticket not found");
+    if (id === null) return;
+
+    // requireAuth guarantees req.user, but it's typed optional — guard for types.
+    const agent = req.user;
+    if (!agent) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const data = parseBody(createMessageSchema, req.body, res);
+    if (!data) return;
+
+    const existing = await prisma.ticket.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!existing) {
+      res.status(404).json({ error: "Ticket not found" });
+      return;
+    }
+
+    const message = await prisma.message.create({
+      data: {
+        ticketId: id,
+        direction: "outbound",
+        fromEmail: agent.email,
+        fromName: agent.name,
+        body: data.body,
+        sentById: agent.id,
+      },
+      select: {
+        id: true,
+        direction: true,
+        fromEmail: true,
+        fromName: true,
+        body: true,
+        createdAt: true,
+      },
+    });
+
+    res.status(201).json({ message });
   },
 );

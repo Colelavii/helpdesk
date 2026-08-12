@@ -8,6 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import CreateUserDialog from "@/components/CreateUserDialog";
+import ErrorMessage from "@/components/ErrorMessage";
 import UsersTable, { type UserRow } from "@/components/UsersTable";
 
 async function fetchUsers(signal: AbortSignal): Promise<UserRow[]> {
@@ -50,9 +51,7 @@ export default function UsersPage() {
           {isPending ? (
             <UsersTable isPending />
           ) : isError ? (
-            <p role="alert" className="text-sm text-destructive">
-              Unable to load users.
-            </p>
+            <ErrorMessage>Unable to load users.</ErrorMessage>
           ) : users.length === 0 ? (
             <p className="text-sm text-muted-foreground">No users yet.</p>
           ) : (

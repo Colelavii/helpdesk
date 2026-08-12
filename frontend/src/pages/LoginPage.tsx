@@ -16,6 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import ErrorMessage, { FieldError } from "@/components/ErrorMessage";
 
 const loginSchema = z.object({
   email: z.email("Enter a valid email address"),
@@ -85,11 +86,7 @@ export default function LoginPage() {
                 aria-invalid={!!errors.email}
                 {...register("email")}
               />
-              {errors.email && (
-                <p className="text-sm text-destructive">
-                  {errors.email.message}
-                </p>
-              )}
+              <FieldError>{errors.email?.message}</FieldError>
             </div>
 
             <div className="space-y-2">
@@ -120,11 +117,7 @@ export default function LoginPage() {
                   )}
                 </button>
               </div>
-              {errors.password && (
-                <p className="text-sm text-destructive">
-                  {errors.password.message}
-                </p>
-              )}
+              <FieldError>{errors.password?.message}</FieldError>
             </div>
 
             <div className="flex items-center gap-2">
@@ -138,11 +131,7 @@ export default function LoginPage() {
               </Label>
             </div>
 
-            {errors.root && (
-              <p role="alert" className="text-sm text-destructive">
-                {errors.root.message}
-              </p>
-            )}
+            <ErrorMessage>{errors.root?.message}</ErrorMessage>
 
             <Button type="submit" disabled={isSubmitting} className="w-full">
               {isSubmitting ? "Signing in…" : "Sign in"}

@@ -29,3 +29,11 @@ export const ticketsQuerySchema = z.object({
 
 export type TicketSortField = (typeof ticketSortFields)[number];
 export type TicketsQuery = z.infer<typeof ticketsQuerySchema>;
+
+// Shared by the reply endpoint (server-side validation of the request body) and
+// the reply form (client-side validation) so both agree on the rule and message.
+export const createMessageSchema = z.object({
+  body: z.string().trim().min(1, "Reply can't be empty"),
+});
+
+export type CreateMessageInput = z.infer<typeof createMessageSchema>;
