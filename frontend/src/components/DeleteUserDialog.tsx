@@ -31,6 +31,9 @@ export default function DeleteUserDialog({ user }: { user: DeletableUser }) {
     mutationFn: () => axios.delete(`/api/users/${user.id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
+      // Deleting a user unassigns their tickets server-side.
+      queryClient.invalidateQueries({ queryKey: ["tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["ticket"] });
       setOpen(false);
     },
     onError: (error) => {
@@ -65,7 +68,8 @@ export default function DeleteUserDialog({ user }: { user: DeletableUser }) {
           <AlertDialogTitle>Delete user</AlertDialogTitle>
           <AlertDialogDescription>
             This deactivates {user.name} and revokes their access. They will no
-            longer appear in the list or be able to sign in.
+            longer appear in the list or be able to sign in, and any tickets
+            assigned to them will be unassigned.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <ErrorMessage>{errorMessage}</ErrorMessage>

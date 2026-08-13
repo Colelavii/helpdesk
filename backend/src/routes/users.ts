@@ -136,10 +136,16 @@ usersRouter.delete(
 
     // Soft delete, then revoke active sessions so the user is logged out
     // immediately; the session-create hook blocks any future sign-in.
-    await prisma.user.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-    });
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      }),
+      prisma.ticket.updateMany({
+        where: { assignedToId: id },
+        data: { assignedToId: null },
+      }),
+    ]);
     const ctx = await auth.$context;
     await ctx.internalAdapter.deleteUserSessions(id);
 
