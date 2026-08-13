@@ -134,7 +134,11 @@ model Message {
   direction  MessageDirection
   fromEmail  String
   fromName   String
+  // `body` is the canonical plain-text form and is always present — it's what
+  // the thread renders and what AI reads. `bodyHtml` is the optional rich
+  // version (an email's text/html part); null when the source had none.
   body       String
+  bodyHtml   String?
   messageId  String?          @unique
   inReplyTo  String?
   references String[]

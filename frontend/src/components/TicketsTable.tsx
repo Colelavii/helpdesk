@@ -37,7 +37,12 @@ import {
 } from "@/components/ui/select";
 import { TextLink } from "@/components/ui/link";
 import { cn } from "@/lib/utils";
-import { TicketStatus, TicketCategory, type Ticket } from "@helpdesk/core";
+import {
+  TicketStatus,
+  TicketCategory,
+  ticketSearchMaxLength,
+  type Ticket,
+} from "@helpdesk/core";
 
 export interface TicketFilters {
   status?: TicketStatus;
@@ -176,6 +181,7 @@ export default function TicketsTable({
             type="search"
             placeholder="Search tickets…"
             aria-label="Search tickets"
+            maxLength={ticketSearchMaxLength}
             value={filters.search ?? ""}
             onChange={(e) =>
               onFiltersChange({ ...filters, search: e.target.value || undefined })

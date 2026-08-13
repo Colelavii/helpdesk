@@ -12,6 +12,12 @@ export const ticketSortFields = [
   "createdAt",
 ] as const;
 
+// Caps the free-text search. Exported so the search input stops typing at the
+// same length the server enforces — otherwise a long paste would 400 and the
+// list would fall back to its error state. `.trim()` runs first, so trailing
+// whitespace doesn't count against the limit.
+export const ticketSearchMaxLength = 100;
+
 export const ticketsQuerySchema = z.object({
   sort: z.enum(ticketSortFields).default("createdAt"),
   order: z.enum(["asc", "desc"]).default("desc"),
@@ -21,7 +27,7 @@ export const ticketsQuerySchema = z.object({
   category: z.enum(TicketCategory).optional(),
   // Free-text search across subject, requester name, and requester email.
   // Empty string is treated the same as omitting the param.
-  search: z.string().trim().optional(),
+  search: z.string().trim().max(ticketSearchMaxLength).optional(),
   // Pagination (1-based page). Coerced because query params arrive as strings.
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(10),

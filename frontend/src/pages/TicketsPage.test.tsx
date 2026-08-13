@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axios from "axios";
-import { TicketStatus, TicketCategory, type Ticket } from "@helpdesk/core";
+import {
+  TicketStatus,
+  TicketCategory,
+  ticketSearchMaxLength,
+  type Ticket,
+} from "@helpdesk/core";
 import TicketsPage from "./TicketsPage";
 import TicketsTable, { type TicketFilters } from "@/components/TicketsTable";
 import { renderWithClient } from "../test/render";
@@ -402,6 +407,16 @@ describe("TicketsTable — filter bar rendering", () => {
     expect(onFiltersChange).toHaveBeenLastCalledWith(
       expect.not.objectContaining({ search: expect.anything() }),
     );
+  });
+
+  // The server rejects a search longer than this, which would surface as the
+  // list's error state — the input has to stop typing at the same limit.
+  it("caps the search input at the length the server accepts", () => {
+    renderWithClient(<TicketsTable {...defaultProps} />);
+
+    expect(
+      screen.getByRole("searchbox", { name: /search tickets/i }),
+    ).toHaveAttribute("maxlength", String(ticketSearchMaxLength));
   });
 
   it("shows empty-filter message in table body when tickets array is empty", () => {
