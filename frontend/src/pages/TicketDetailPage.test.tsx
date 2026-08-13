@@ -231,9 +231,14 @@ describe("TicketDetailPage", () => {
     renderDetail("7");
     await screen.findByRole("heading", { name: "Cannot access the portal" });
 
-    await user.click(screen.getByRole("button", { name: /send reply/i }));
+    // An empty draft disables send rather than showing a validation message,
+    // so the click is a no-op. ReplyForm.test.tsx owns the enable/disable
+    // transitions; this only checks the form is wired into the page.
+    const send = screen.getByRole("button", { name: /send reply/i });
+    expect(send).toBeDisabled();
 
-    expect(await screen.findByText(/reply can't be empty/i)).toBeInTheDocument();
+    await user.click(send);
+
     expect(post).not.toHaveBeenCalled();
   });
 });

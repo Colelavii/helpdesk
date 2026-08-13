@@ -24,11 +24,17 @@ export default function ReplyForm({ ticket }: { ticket: Ticket }) {
     handleSubmit,
     reset,
     setError,
+    clearErrors,
+    setValue,
+    getValues,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<CreateMessageInput>({
     resolver: zodResolver(createMessageSchema),
     defaultValues: { body: "" },
   });
+
+  const draft = watch("body");
 
   const mutation = useMutation({
     mutationFn: (values: CreateMessageInput) =>
@@ -48,6 +54,35 @@ export default function ReplyForm({ ticket }: { ticket: Ticket }) {
     },
   });
 
+  // Rewrites the draft in place. The agent stays the author — nothing is sent
+  // until they read the result and hit "Send reply".
+  const polish = useMutation({
+    mutationFn: async (body: string) => {
+      const { data } = await axios.post<{ body: string }>(
+        `/api/tickets/${ticket.id}/polish`,
+        { body },
+      );
+      return data.body;
+    },
+    onSuccess: (polished) => {
+      clearErrors("root");
+      setValue("body", polished, { shouldDirty: true, shouldValidate: true });
+    },
+    onError: (error) => {
+      setError("root", {
+        message: apiErrorMessage(
+          error,
+          "Unable to polish your reply. Please try again.",
+        ),
+      });
+    },
+  });
+
+  const isPolishing = polish.isPending;
+  // A blank draft disables both actions rather than surfacing a validation
+  // error on submit — there is nothing to polish or send either way.
+  const canSubmit = draft.trim().length > 0 && !isPolishing && !isSubmitting;
+
   return (
     <Card>
       <CardHeader>
@@ -64,12 +99,21 @@ export default function ReplyForm({ ticket }: { ticket: Ticket }) {
             rows={5}
             placeholder="Write a reply to the requester…"
             aria-invalid={!!errors.body}
+            disabled={isPolishing}
             {...register("body")}
           />
           <FieldError>{errors.body?.message}</FieldError>
           <ErrorMessage>{errors.root?.message}</ErrorMessage>
-          <div className="flex justify-end">
-            <Button type="submit" disabled={isSubmitting}>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!canSubmit}
+              onClick={() => polish.mutate(getValues("body"))}
+            >
+              {isPolishing ? "Polishing…" : "Polish"}
+            </Button>
+            <Button type="submit" disabled={!canSubmit}>
               {isSubmitting ? "Sending…" : "Send reply"}
             </Button>
           </div>

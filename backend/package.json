@@ -16,8 +16,10 @@
     "db:seed": "bun run src/seed.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.41",
     "@helpdesk/core": "file:../core",
     "@prisma/client": "6",
+    "ai": "^7.0.64",
     "better-auth": "^1.6.13",
     "dompurify": "^3.4.13",
     "express": "^5.1.0",

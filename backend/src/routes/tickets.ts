@@ -10,6 +10,10 @@ import { requireAuth } from "../require-auth.ts";
 import { prisma } from "../prisma.ts";
 import { parseBody } from "../parse-body.ts";
 import { parseId } from "../parse-id.ts";
+import {
+  polishReply,
+  MissingPolishApiKeyError,
+} from "../tickets/polish-reply.ts";
 import type { Prisma } from "../generated/prisma/client.ts";
 
 export const ticketsRouter = Router();
@@ -190,6 +194,65 @@ ticketsRouter.patch(
     });
 
     res.json({ ticket });
+  },
+);
+
+// Rewrite an agent's draft reply with the LLM. Nothing is persisted — the
+// polished text goes back to the composer for the agent to review and edit.
+// The draft reuses createMessageSchema so an empty draft is rejected the same
+// way sending one is.
+ticketsRouter.post(
+  "/:id/polish",
+  async (req: Request<{ id: string }>, res: Response) => {
+    const id = parseId(req.params.id, res, "Ticket not found");
+    if (id === null) return;
+
+    // The polished reply is signed with the signed-in agent's name — the same
+    // person who'd be recorded as the sender if they went on to send it.
+    const agent = req.user;
+    if (!agent) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const data = parseBody(createMessageSchema, req.body, res);
+    if (!data) return;
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { id },
+      select: {
+        subject: true,
+        requesterName: true,
+        messages: {
+          select: { direction: true, fromName: true, body: true },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    });
+
+    if (!ticket) {
+      res.status(404).json({ error: "Ticket not found" });
+      return;
+    }
+
+    try {
+      const body = await polishReply(data.body, {
+        ...ticket,
+        agentName: agent.name,
+      });
+      res.json({ body });
+    } catch (error) {
+      if (error instanceof MissingPolishApiKeyError) {
+        res.status(503).json({ error: "Polishing is not configured." });
+        return;
+      }
+      // The model call failed (rate limit, timeout, upstream outage). The draft
+      // is still safe in the composer, so a plain error is enough.
+      console.error("Failed to polish reply", error);
+      res
+        .status(502)
+        .json({ error: "The polish service is unavailable right now." });
+    }
   },
 );
 

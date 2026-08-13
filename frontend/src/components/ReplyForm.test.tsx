@@ -46,17 +46,21 @@ function sendButton(): HTMLElement {
   return screen.getByRole("button", { name: /send reply/i });
 }
 
+function polishButton(): HTMLElement {
+  return screen.getByRole("button", { name: /^polish/i });
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
 describe("ReplyForm", () => {
-  it("renders an empty reply box and a send button", () => {
+  it("renders an empty reply box with send disabled", () => {
     renderReplyForm();
 
     expect(screen.getByRole("heading", { name: "Reply" })).toBeInTheDocument();
     expect(replyBox()).toHaveValue("");
-    expect(sendButton()).toBeEnabled();
+    expect(sendButton()).toBeDisabled();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -115,25 +119,28 @@ describe("ReplyForm", () => {
     );
   });
 
-  it("blocks an empty reply and marks the box invalid", async () => {
-    const post = mockPost();
+  // An empty draft is blocked by disabling send, not by a validation message —
+  // so there is nothing to click and no error copy to assert.
+  it("enables send once the draft has content, and disables it again when cleared", async () => {
     const user = renderReplyForm();
 
-    await user.click(sendButton());
+    expect(sendButton()).toBeDisabled();
 
-    expect(await screen.findByText(/reply can't be empty/i)).toBeInTheDocument();
-    expect(replyBox()).toBeInvalid();
-    expect(post).not.toHaveBeenCalled();
+    await user.type(replyBox(), "Here's how to fix it.");
+    expect(sendButton()).toBeEnabled();
+
+    await user.clear(replyBox());
+    expect(sendButton()).toBeDisabled();
   });
 
-  it("blocks a whitespace-only reply", async () => {
+  it("keeps send disabled for a whitespace-only reply", async () => {
     const post = mockPost();
     const user = renderReplyForm();
 
     await user.type(replyBox(), "    ");
-    await user.click(sendButton());
 
-    expect(await screen.findByText(/reply can't be empty/i)).toBeInTheDocument();
+    expect(sendButton()).toBeDisabled();
+    expect(screen.queryByText(/reply can't be empty/i)).not.toBeInTheDocument();
     expect(post).not.toHaveBeenCalled();
   });
 
@@ -164,6 +171,82 @@ describe("ReplyForm", () => {
     expect(alert).toHaveTextContent(
       "Unable to send your reply. Please try again.",
     );
+  });
+
+  describe("polish", () => {
+    it("stays disabled until the draft has content", async () => {
+      const user = renderReplyForm();
+
+      expect(polishButton()).toBeDisabled();
+
+      await user.type(replyBox(), "cant login pls help");
+
+      expect(polishButton()).toBeEnabled();
+    });
+
+    it("POSTs the draft to the polish endpoint and replaces it with the result", async () => {
+      const post = mockPost().mockResolvedValue({
+        data: { body: "Thanks for getting in touch. Let's get you back in." },
+      });
+      const user = renderReplyForm();
+
+      await user.type(replyBox(), "cant login pls help");
+      await user.click(polishButton());
+
+      await waitFor(() =>
+        expect(post).toHaveBeenCalledWith(`/api/tickets/${TICKET_ID}/polish`, {
+          body: "cant login pls help",
+        }),
+      );
+      await waitFor(() =>
+        expect(replyBox()).toHaveValue(
+          "Thanks for getting in touch. Let's get you back in.",
+        ),
+      );
+    });
+
+    it("does not send the reply", async () => {
+      const post = mockPost().mockResolvedValue({ data: { body: "Polished." } });
+      const user = renderReplyForm();
+
+      await user.type(replyBox(), "rough draft");
+      await user.click(polishButton());
+
+      await waitFor(() => expect(replyBox()).toHaveValue("Polished."));
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(post).not.toHaveBeenCalledWith(
+        `/api/tickets/${TICKET_ID}/messages`,
+        expect.anything(),
+      );
+    });
+
+    it("surfaces the server's error message and keeps the draft", async () => {
+      mockPost().mockRejectedValue({
+        isAxiosError: true,
+        response: { data: { error: "Polishing is not configured." } },
+      });
+      const user = renderReplyForm();
+
+      await user.type(replyBox(), "my untouched draft");
+      await user.click(polishButton());
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent("Polishing is not configured.");
+      expect(replyBox()).toHaveValue("my untouched draft");
+    });
+
+    it("falls back to a generic message for non-axios failures", async () => {
+      mockPost().mockRejectedValue(new Error("network exploded"));
+      const user = renderReplyForm();
+
+      await user.type(replyBox(), "another draft");
+      await user.click(polishButton());
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(
+        "Unable to polish your reply. Please try again.",
+      );
+    });
   });
 
   it("clears a previous error once a retry succeeds", async () => {
