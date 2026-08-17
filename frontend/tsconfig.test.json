@@ -5,6 +5,11 @@
     "types": ["node"],
     "noEmit": true
   },
+  // tsconfig.app.json excludes the specs so test-only deps stay out of the app
+  // build. `exclude` is inherited through `extends` and filters `include`, so
+  // without clearing it here the list below matches nothing and this project
+  // type-checks no specs at all.
+  "exclude": [],
   "include": [
     "src/**/*.test.ts",
     "src/**/*.test.tsx",

@@ -1,8 +1,11 @@
-import { generateText } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { anthropicClient, messageText } from "../anthropic.ts";
 
 // Overridable so the model can be swapped without a code change.
-const model = process.env.POLISH_MODEL ?? "gpt-5.6-luna";
+const model = process.env.POLISH_MODEL ?? "claude-sonnet-5";
+
+// Room for the rewrite plus the thinking that precedes it — max_tokens caps
+// both together, and a truncated reply would reach the composer looking whole.
+const maxTokens = 4096;
 
 // Enough of the thread to ground tone and terminology without blowing the
 // prompt up on long tickets. Oldest messages matter least here.
@@ -15,7 +18,7 @@ export type PolishContext = {
   messages: { direction: string; fromName: string | null; body: string }[];
 };
 
-const instructions = `You are an editor for a university student-support helpdesk. You rewrite a support agent's draft reply so it is clearer and more professional, and you return nothing but the rewritten reply.
+const systemPrompt = `You are an editor for a university student-support helpdesk. You rewrite a support agent's draft reply so it is clearer and more professional, and you return nothing but the rewritten reply.
 
 Rules:
 - Preserve the draft's meaning, facts, commitments, and intent exactly. Never invent details, policies, dates, names, or promises that are not in the draft.
@@ -31,7 +34,7 @@ Rules:
 
 export class MissingPolishApiKeyError extends Error {
   constructor() {
-    super("OPENAI_API_KEY is not configured");
+    super("ANTHROPIC_API_KEY is not configured");
   }
 }
 
@@ -39,16 +42,21 @@ export async function polishReply(
   draft: string,
   context: PolishContext,
 ): Promise<string> {
-  if (!process.env.OPENAI_API_KEY) throw new MissingPolishApiKeyError();
+  const client = anthropicClient();
+  if (!client) throw new MissingPolishApiKeyError();
 
-  const { text } = await generateText({
-    model: openai(model),
-    instructions,
-    prompt: buildPrompt(draft, context),
-    temperature: 0.3,
+  const message = await client.messages.create({
+    model,
+    max_tokens: maxTokens,
+    thinking: { type: "adaptive" },
+    // A constrained rewrite of text the agent already wrote — the agent is
+    // waiting on the button, so latency matters more than deeper reasoning.
+    output_config: { effort: "low" },
+    system: systemPrompt,
+    messages: [{ role: "user", content: buildPrompt(draft, context) }],
   });
 
-  const polished = text.trim();
+  const polished = messageText(message);
   // An empty completion would silently wipe the agent's draft.
   return polished === "" ? draft : polished;
 }

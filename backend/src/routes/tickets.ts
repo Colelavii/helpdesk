@@ -14,6 +14,10 @@ import {
   polishReply,
   MissingPolishApiKeyError,
 } from "../tickets/polish-reply.ts";
+import {
+  summarizeTicket,
+  MissingSummaryApiKeyError,
+} from "../tickets/summarize-ticket.ts";
 import type { Prisma } from "../generated/prisma/client.ts";
 
 export const ticketsRouter = Router();
@@ -252,6 +256,53 @@ ticketsRouter.post(
       res
         .status(502)
         .json({ error: "The polish service is unavailable right now." });
+    }
+  },
+);
+
+// Summarise a ticket and its conversation with the LLM. Nothing is persisted and
+// nothing is cached — every call regenerates, so the summary always reflects the
+// thread as it stands. POST (not GET) for that reason: it's a generation action,
+// not a fetchable resource.
+ticketsRouter.post(
+  "/:id/summary",
+  async (req: Request<{ id: string }>, res: Response) => {
+    const id = parseId(req.params.id, res, "Ticket not found");
+    if (id === null) return;
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { id },
+      select: {
+        subject: true,
+        requesterName: true,
+        status: true,
+        category: true,
+        messages: {
+          select: { direction: true, fromName: true, body: true },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    });
+
+    if (!ticket) {
+      res.status(404).json({ error: "Ticket not found" });
+      return;
+    }
+
+    try {
+      const summary = await summarizeTicket(ticket);
+      res.json({ summary });
+    } catch (error) {
+      if (error instanceof MissingSummaryApiKeyError) {
+        res.status(503).json({ error: "Summarising is not configured." });
+        return;
+      }
+      // The model call failed (rate limit, timeout, upstream outage) or came
+      // back empty. Nothing was persisted, so the agent can simply retry.
+      console.error("Failed to summarize ticket", error);
+      res
+        .status(502)
+        .json({ error: "The summary service is unavailable right now." });
     }
   },
 );

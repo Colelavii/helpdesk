@@ -9,6 +9,7 @@ import ReplyForm from "@/components/ReplyForm";
 import UpdateTicket from "@/components/UpdateTicket";
 import ErrorMessage from "@/components/ErrorMessage";
 import MessageThread from "@/components/MessageThread";
+import TicketSummary from "@/components/TicketSummary";
 import { ticketQueryKey } from "@/lib/query-keys";
 
 async function fetchTicket(
@@ -55,6 +56,8 @@ export default function TicketDetailPage() {
           {/* Left column — subject, requester, and the conversation */}
           <div className="space-y-6 lg:col-span-2">
             <TicketDetail ticket={ticket} />
+
+            <TicketSummary ticket={ticket} />
 
             <MessageThread ticket={ticket} />
 

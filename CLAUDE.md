@@ -15,7 +15,7 @@ Read these before making non-trivial changes; they hold decisions that aren't ye
 - **Runtime / package manager**: Bun (not Node + npm)
 - **Database**: PostgreSQL via Prisma
 - **Authentication**: Better Auth (self-hosted library) with database-backed sessions — no external auth provider
-- **AI**: Anthropic Claude (Haiku 4.5 for classification, Sonnet 4.6 for summaries and draft replies)
+- **AI**: Anthropic Claude via the official `@anthropic-ai/sdk` (Haiku 4.5 for classification, Sonnet 5 for summaries and draft replies)
 - **Email**: Mailgun (inbound webhook + outbound send)
 - **Deployment**: Docker
 

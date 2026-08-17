@@ -66,7 +66,7 @@ Goal: every inbound ticket receives an AI category suggestion, summary, and draf
 - [ ] Install `@anthropic-ai/sdk`; add `ANTHROPIC_API_KEY` env var
 - [ ] Prisma additions on `Ticket`: `ai_summary`, `ai_suggested_category`, `ai_suggested_reply`, `ai_processed_at`
 - [ ] AI service module with `classify(body)`, `summarise(body)`, `draftReply(body, context)`
-- [ ] Use Haiku 4.5 for classification; Sonnet 4.6 for summary and draft
+- [ ] Use Haiku 4.5 for classification; Sonnet 5 for summary and draft
 - [ ] After inbound ticket creation, run AI processing (synchronous initially; can move to a job queue later)
 - [ ] Ticket detail UI: show AI summary at top, category suggestion as a confirmable dropdown, draft pre-filled in the reply textarea (editable before send)
 - [ ] Store the actually-sent reply separately from `ai_suggested_reply` so draft quality can be measured later
