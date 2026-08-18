@@ -5,6 +5,7 @@ import {
   inboundEmailSchema,
   ingestInboundEmail,
 } from "../tickets/ingest-inbound-email.ts";
+import { classifyTicketInBackground } from "../tickets/auto-classify-ticket.ts";
 
 export const webhooksRouter = Router();
 
@@ -19,5 +20,12 @@ webhooksRouter.post(
     if (!data) return;
     const result = await ingestInboundEmail(data);
     res.status(result.status === "created" ? 201 : 200).json(result);
+
+    // AI classification is kicked off after the response and deliberately not
+    // awaited: the provider retries an acknowledgement that's slow to arrive,
+    // which would duplicate work here (and a model outage would turn every
+    // inbound email into a failed delivery). It takes the whole result and
+    // decides for itself whether the ingest produced anything to classify.
+    classifyTicketInBackground(result);
   },
 );
