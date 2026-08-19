@@ -1,9 +1,5 @@
 import { prisma } from "../prisma.ts";
-import {
-  classifyTicket,
-  MissingClassificationApiKeyError,
-} from "./classify-ticket.ts";
-import type { IngestResult } from "./ingest-inbound-email.ts";
+import { classifyTicket } from "./classify-ticket.ts";
 
 export interface AutoClassifyResult {
   status: "classified" | "skipped" | "superseded";
@@ -45,28 +41,4 @@ export async function autoClassifyTicket(
   });
 
   return { status: count === 1 ? "classified" : "superseded" };
-}
-
-// Fire-and-forget entry point, taking an ingest result straight from the
-// inbound-email webhook so the decision of which results are worth classifying
-// lives here rather than at the call site. The webhook has to acknowledge the
-// provider straight away, so classification must not hold up — or fail — that
-// response: the ticket is already stored, and an uncategorised ticket is a
-// dropdown an agent can still set themselves.
-export function classifyTicketInBackground(result: IngestResult): void {
-  // Only a brand-new ticket needs a category. A reply threaded onto an existing
-  // ticket keeps that ticket's category, and a deduped provider retry has
-  // already been handled by the delivery it duplicates.
-  if (result.status !== "created") return;
-
-  const { ticketId } = result;
-  void autoClassifyTicket(ticketId).catch((error: unknown) => {
-    if (error instanceof MissingClassificationApiKeyError) {
-      console.warn(
-        `Skipping classification for ticket ${ticketId}: ANTHROPIC_API_KEY is not configured`,
-      );
-      return;
-    }
-    console.error(`Failed to classify ticket ${ticketId}`, error);
-  });
 }

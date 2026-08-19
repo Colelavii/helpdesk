@@ -51,16 +51,9 @@ mock.module("../prisma.ts", () => ({
   },
 }));
 
-const { autoClassifyTicket, classifyTicketInBackground } = await import(
-  "./auto-classify-ticket.ts"
-);
+const { autoClassifyTicket } = await import("./auto-classify-ticket.ts");
 
 const originalApiKey = process.env.ANTHROPIC_API_KEY;
-
-// Lets a fire-and-forget promise chain settle without exposing it to callers.
-function settle(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
 
 beforeEach(() => {
   completion = '{"category": "technical"}';
@@ -128,81 +121,13 @@ describe("autoClassifyTicket", () => {
     expect(await autoClassifyTicket(7)).toEqual({ status: "classified" });
     expect(createCalls).toBe(1);
   });
-});
 
-describe("classifyTicketInBackground", () => {
-  const created = { ticketId: 7, status: "created" } as const;
-
-  it("returns before the classification finishes", () => {
-    expect(classifyTicketInBackground(created)).toBeUndefined();
-    expect(updateManyArgs).toHaveLength(0);
-  });
-
-  it("still stores the category once the call completes", async () => {
-    classifyTicketInBackground(created);
-
-    await settle();
-
-    expect(updateManyArgs[0]?.data).toEqual({ category: "technical" });
-  });
-
-  // A reply on an existing ticket keeps that ticket's category, and a deduped
-  // retry was handled by the delivery it duplicates — neither reaches the model.
-  it("ignores a threaded reply", async () => {
-    classifyTicketInBackground({ ticketId: 7, status: "threaded" });
-
-    await settle();
-
-    expect(findUniqueArgs).toHaveLength(0);
-    expect(createCalls).toBe(0);
-  });
-
-  it("ignores a deduped delivery", async () => {
-    classifyTicketInBackground({ ticketId: 7, status: "deduped" });
-
-    await settle();
-
-    expect(findUniqueArgs).toHaveLength(0);
-    expect(createCalls).toBe(0);
-  });
-
-  // A model outage must not surface as an unhandled rejection — the webhook has
-  // already answered, and the ticket is stored either way.
-  it("swallows a failed model call", async () => {
+  // The queue worker turns a rejection into a retry, so a transient model
+  // failure has to propagate rather than resolve quietly.
+  it("propagates a failed model call", async () => {
     createError = new Error("upstream is down");
-    const errors: unknown[] = [];
-    const original = console.error;
-    console.error = (...args: unknown[]) => errors.push(args);
 
-    try {
-      classifyTicketInBackground(created);
-      await settle();
-    } finally {
-      console.error = original;
-    }
-
-    expect(errors).toHaveLength(1);
+    await expect(autoClassifyTicket(7)).rejects.toThrow("upstream is down");
     expect(updateManyArgs).toHaveLength(0);
-  });
-
-  it("warns rather than errors when no API key is configured", async () => {
-    delete process.env.ANTHROPIC_API_KEY;
-    const warnings: unknown[] = [];
-    const originalWarn = console.warn;
-    const originalError = console.error;
-    const errors: unknown[] = [];
-    console.warn = (...args: unknown[]) => warnings.push(args);
-    console.error = (...args: unknown[]) => errors.push(args);
-
-    try {
-      classifyTicketInBackground(created);
-      await settle();
-    } finally {
-      console.warn = originalWarn;
-      console.error = originalError;
-    }
-
-    expect(warnings).toHaveLength(1);
-    expect(errors).toHaveLength(0);
   });
 });

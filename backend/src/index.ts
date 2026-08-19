@@ -5,6 +5,8 @@ import { requireAuth } from "./require-auth.ts";
 import { usersRouter } from "./routes/users.ts";
 import { ticketsRouter } from "./routes/tickets.ts";
 import { webhooksRouter } from "./routes/webhooks.ts";
+import { startQueue, stopQueue } from "./queue.ts";
+import { registerClassificationWorker } from "./tickets/classification-queue.ts";
 
 const app = express();
 const port = Number(process.env.PORT) || 3001;
@@ -26,6 +28,35 @@ app.use("/api/users", usersRouter);
 app.use("/api/tickets", ticketsRouter);
 app.use("/api/webhooks", webhooksRouter);
 
-app.listen(port, () => {
+// The API serves regardless of the queue's health: classification is an
+// enhancement, and an inbound email is still stored (and answerable) without it.
+// Failing to boot over it would take the whole helpdesk down with the AI.
+try {
+  await startQueue();
+  await registerClassificationWorker();
+} catch (error) {
+  console.error(
+    "Job queue unavailable — inbound tickets will not be auto-classified",
+    error,
+  );
+}
+
+const server = app.listen(port, () => {
   console.log(`Backend listening on http://localhost:${port}`);
 });
+
+// Stop taking new work, let an in-flight classification finish, then exit.
+async function shutdown(): Promise<void> {
+  server.close();
+  await stopQueue();
+  process.exit(0);
+}
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    shutdown().catch((error: unknown) => {
+      console.error("Failed to shut down cleanly", error);
+      process.exit(1);
+    });
+  });
+}

@@ -17,6 +17,7 @@ Read these before making non-trivial changes; they hold decisions that aren't ye
 - **Authentication**: Better Auth (self-hosted library) with database-backed sessions — no external auth provider
 - **AI**: Anthropic Claude via the official `@anthropic-ai/sdk` (Haiku 4.5 for classification, Sonnet 5 for summaries and draft replies)
 - **Email**: Mailgun (inbound webhook + outbound send)
+- **Background jobs**: pg-boss (PostgreSQL-backed queue, no Redis) — used for AI ticket classification
 - **Deployment**: Docker
 
 ## Repo layout
@@ -40,6 +41,18 @@ The frontend dev server proxies `/api/*` to the backend at `http://localhost:300
 - Schema lives in `backend/prisma/schema.prisma`. Generated client output: `backend/src/generated/prisma` (gitignored). Import client from `./generated/prisma/client.ts` (the `.ts` extension is required by the backend's `verbatimModuleSyntax`).
 - Singleton wrapper: `backend/src/prisma.ts`. Always import `prisma` from there — never instantiate `PrismaClient` ad hoc.
 - After a schema change: `bun run db:migrate` (creates and applies a migration in dev). For client-only regen: `bun run db:generate`.
+
+## Background jobs (pg-boss)
+
+Deferred work runs through **pg-boss**, a job queue backed by the same PostgreSQL database — no Redis, no extra service.
+
+- Singleton wrapper: `backend/src/queue.ts` exports `boss` plus `startQueue()` / `stopQueue()`. Always import `boss` from there — never construct `PgBoss` ad hoc. Note the import is **named** (`import { PgBoss } from "pg-boss"`), not a default.
+- **pg-boss owns its own `pgboss` schema** and creates it on first `start()` (so the DB user needs DDL rights). It is deliberately *not* in `public`: Prisma migrations then never see the job tables, and `prisma db pull` won't drag them into `schema.prisma`. Nothing about pg-boss goes through Prisma — it has its own small pool (`max: 2`).
+- Queue definitions live next to the feature they serve, not in `queue.ts` (which stays generic). `backend/src/tickets/classification-queue.ts` is the reference example: it owns the queue name, the job payload type, `createClassificationQueues()`, the worker handler, and the `enqueue*` helper.
+- **A queue must be created before jobs are sent to it** (`boss.createQueue(name, options)`); retry/expiry options are set per queue there and inherited by its jobs. Create a dead-letter queue *before* the queue that references it.
+- **Handler contract**: a handler receives an **array** of jobs (`Job<T>[]`), and jobs are fetched one at a time (`batchSize: 1`) because a throw fails the whole batch. **Throw to request a retry**; return normally to complete the job. Errors that retrying cannot fix (e.g. a missing API key) should log and return rather than burn retries into the dead-letter queue.
+- **Workers run inside the API process**, started from `backend/src/index.ts` after `startQueue()`. Queue startup failure is caught and logged, not fatal — the API must serve even when background processing is down. `SIGINT`/`SIGTERM` call `stopQueue()` for a graceful drain. Moving workers to their own entrypoint later means calling `registerClassificationWorker()` from that process instead.
+- Inspect jobs with SQL: `select state, retry_count, output from pgboss.job where name = '...'`.
 
 ## Authentication
 

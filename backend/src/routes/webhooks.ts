@@ -5,7 +5,7 @@ import {
   inboundEmailSchema,
   ingestInboundEmail,
 } from "../tickets/ingest-inbound-email.ts";
-import { classifyTicketInBackground } from "../tickets/auto-classify-ticket.ts";
+import { enqueueTicketClassification } from "../tickets/classification-queue.ts";
 
 export const webhooksRouter = Router();
 
@@ -19,13 +19,20 @@ webhooksRouter.post(
     const data = parseBody(inboundEmailSchema, req.body, res);
     if (!data) return;
     const result = await ingestInboundEmail(data);
-    res.status(result.status === "created" ? 201 : 200).json(result);
 
-    // AI classification is kicked off after the response and deliberately not
-    // awaited: the provider retries an acknowledgement that's slow to arrive,
-    // which would duplicate work here (and a model outage would turn every
-    // inbound email into a failed delivery). It takes the whole result and
-    // decides for itself whether the ingest produced anything to classify.
-    classifyTicketInBackground(result);
+    // Enqueued before the acknowledgement so the hand-off is durable: once the
+    // provider is told we have the email, the classification job is already
+    // recorded and survives a crash or deploy. It's only a local insert, so it
+    // costs the response nothing like a model call would. A queue that is down
+    // must still not fail the delivery — the ticket is stored, and an
+    // uncategorised ticket is a dropdown an agent can set — hence the catch.
+    await enqueueTicketClassification(result).catch((error: unknown) => {
+      console.error(
+        `Failed to enqueue classification for ticket ${result.ticketId}`,
+        error,
+      );
+    });
+
+    res.status(result.status === "created" ? 201 : 200).json(result);
   },
 );
