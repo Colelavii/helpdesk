@@ -17,7 +17,7 @@ Read these before making non-trivial changes; they hold decisions that aren't ye
 - **Authentication**: Better Auth (self-hosted library) with database-backed sessions — no external auth provider
 - **AI**: Anthropic Claude via the official `@anthropic-ai/sdk` (Haiku 4.5 for classification, Sonnet 5 for summaries and draft replies)
 - **Email**: Mailgun (inbound webhook + outbound send)
-- **Background jobs**: pg-boss (PostgreSQL-backed queue, no Redis) — used for AI ticket classification
+- **Background jobs**: pg-boss (PostgreSQL-backed queue, no Redis) — used for AI ticket classification and auto-resolution
 - **Deployment**: Docker
 
 ## Repo layout
@@ -48,11 +48,31 @@ Deferred work runs through **pg-boss**, a job queue backed by the same PostgreSQ
 
 - Singleton wrapper: `backend/src/queue.ts` exports `boss` plus `startQueue()` / `stopQueue()`. Always import `boss` from there — never construct `PgBoss` ad hoc. Note the import is **named** (`import { PgBoss } from "pg-boss"`), not a default.
 - **pg-boss owns its own `pgboss` schema** and creates it on first `start()` (so the DB user needs DDL rights). It is deliberately *not* in `public`: Prisma migrations then never see the job tables, and `prisma db pull` won't drag them into `schema.prisma`. Nothing about pg-boss goes through Prisma — it has its own small pool (`max: 2`).
-- Queue definitions live next to the feature they serve, not in `queue.ts` (which stays generic). `backend/src/tickets/classification-queue.ts` is the reference example: it owns the queue name, the job payload type, `createClassificationQueues()`, the worker handler, and the `enqueue*` helper.
+- Queue definitions live next to the feature they serve, not in `queue.ts` (which stays generic). `backend/src/tickets/classification-queue.ts` is the reference example: it owns the queue name, the job payload type, `createClassificationQueues()`, the worker handler, and the `enqueue*` helper. `backend/src/tickets/auto-resolve-queue.ts` follows the same shape.
 - **A queue must be created before jobs are sent to it** (`boss.createQueue(name, options)`); retry/expiry options are set per queue there and inherited by its jobs. Create a dead-letter queue *before* the queue that references it.
 - **Handler contract**: a handler receives an **array** of jobs (`Job<T>[]`), and jobs are fetched one at a time (`batchSize: 1`) because a throw fails the whole batch. **Throw to request a retry**; return normally to complete the job. Errors that retrying cannot fix (e.g. a missing API key) should log and return rather than burn retries into the dead-letter queue.
 - **Workers run inside the API process**, started from `backend/src/index.ts` after `startQueue()`. Queue startup failure is caught and logged, not fatal — the API must serve even when background processing is down. `SIGINT`/`SIGTERM` call `stopQueue()` for a graceful drain. Moving workers to their own entrypoint later means calling `registerClassificationWorker()` from that process instead.
 - Inspect jobs with SQL: `select state, retry_count, output from pgboss.job where name = '...'`.
+
+## Ticket statuses & AI auto-resolution
+
+`TicketStatus` has five values, and **two of them belong to the auto-resolve worker, not to agents**:
+
+| Status | Owner | Meaning |
+| --- | --- | --- |
+| `new` | worker | Just arrived. The default on `Ticket.status`. |
+| `processing` | worker | Claimed; the model is deciding. |
+| `open` | agent | Needs a human — either escalated by the model, or reopened by a student reply. |
+| `resolved` | agent / worker | Answered. |
+| `closed` | agent | No further action expected. |
+
+- **`new` and `processing` are hidden from the ticket list** — and *only* those two. The `where` clause lives in the list handler in `backend/src/routes/tickets.ts`; passing an explicit `?status=` overrides it, so nothing is unreachable. The hidden window is exactly the period the worker still owns the ticket: showing it then would put work in front of an agent that may resolve itself a second later. Once the worker is done the ticket is ordinary history and appears like any other, **whether the AI resolved it or an agent did** — `aiResolvedAt` does not affect list visibility, it is audit data surfaced on the detail page.
+- **Agents can't set `new`/`processing`.** The PATCH body uses `agentTicketStatuses` from `@helpdesk/core` (not the full enum), and the detail page's status picker maps over the same list — rendering the current status as a *disabled* item when the worker still owns it, so the trigger isn't blank.
+- **The flow**: inbound webhook creates the ticket as `new` → `scheduleTicketAutoResolve` enqueues a job → the worker claims it as `processing` → `resolveTicket` asks Claude whether `backend/knowledge-base.md` fully answers it → on `resolve` above the confidence threshold, an outbound reply is written and the ticket is `resolved` with `aiResolvedAt`/`aiConfidence`/`aiDecision` set; otherwise it goes to `open` with the reason recorded.
+- **A ticket must never be stranded in `new` or `processing`** — it would be invisible to every agent with nothing left to move it on. Three paths guard this: a transient failure returns the ticket to `new` so the retry re-claims it; an unfixable one (missing API key, unreadable knowledge base) sends it to `open`; and `scheduleTicketAutoResolve` calls `skipAutoResolve` when no job will ever run (feature disabled, or the queue refused it). The claim also accepts a ticket already in `processing`, so a retry can recover one whose worker died mid-call.
+- **Knowledge base**: `backend/knowledge-base.md`, loaded and cached by `backend/src/tickets/knowledge-base.ts` (resolved relative to the source, not the cwd; override with `KNOWLEDGE_BASE_PATH`). It ships in the system prompt behind a `cache_control` breakpoint since it is byte-identical on every job. Its §10 escalation rules are policy, not code — edit the markdown, not the prompt.
+- **Env**: `AUTO_RESOLVE_ENABLED`, `AUTO_RESOLVE_MODEL`, `AUTO_RESOLVE_CONFIDENCE_THRESHOLD`, `SUPPORT_EMAIL`, `SUPPORT_NAME` — see `backend/.env.example`.
+- ⚠️ **No email is actually sent.** The auto-resolve reply is stored as an outbound `Message` exactly as an agent reply is; Mailgun delivery is still Phase 4.
 
 ## Authentication
 
@@ -166,9 +186,9 @@ When picking up new work, check `implementation-plan.md` to see which phase the 
 
 These are documented at the bottom of `implementation-plan.md`. Flag any work that would silently commit to one of these choices:
 
-- Reopen behaviour on closed tickets when a student replies
+- ~~Reopen behaviour on closed tickets when a student replies~~ — **settled**: the inbound webhook reopens a `resolved`/`closed` ticket to `open` (`ingest-inbound-email.ts`). Now load-bearing: it is how a student gets a human after an AI-resolved ticket.
 - Whether AI auto-assigns category or only suggests it
-- Routing for refund-request tickets
+- ~~Routing for refund-request tickets~~ — **partly settled**: knowledge-base §10 escalates chargebacks, disputed charges, and refunds outside the 30-day window to a human. Whether an escalated refund is auto-*assigned* to anyone is still open.
 - Attachment storage policy
 - PII redaction before embedding past tickets
 - LLM data residency constraints

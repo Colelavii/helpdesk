@@ -64,6 +64,11 @@ export const statusVariant: Record<
   TicketStatus,
   React.ComponentProps<typeof Badge>["variant"]
 > = {
+  // `new` and `processing` are the auto-resolve window. They're filtered out of
+  // the default list, so these only show when someone filters for them
+  // explicitly — muted, because neither is an agent's to act on.
+  new: "outline",
+  processing: "ghost",
   open: "default",
   resolved: "secondary",
   closed: "outline",

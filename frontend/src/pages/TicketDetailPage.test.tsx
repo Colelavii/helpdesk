@@ -52,6 +52,9 @@ const sampleTicket: TicketWithThread = {
       createdAt: "2024-03-20T11:00:00.000Z",
     },
   ],
+  aiResolvedAt: null,
+  aiConfidence: null,
+  aiDecision: null,
 };
 
 const sampleAssignees: TicketAssignee[] = [

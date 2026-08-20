@@ -659,6 +659,24 @@ const tickets: Array<{
 
 // ─── Seeding ──────────────────────────────────────────────────────────────────
 
+// With --if-missing the script is a no-op when demo data is already present, so
+// it can be run unconditionally from a bootstrap step without stacking another
+// 100 rows on every invocation. The probe is a closed ticket: nothing else in
+// the app creates one (the inbound webhook and the auto-resolve worker only ever
+// produce new/processing/open/resolved), so its presence means this seeder ran.
+if (process.argv.includes("--if-missing")) {
+  const existing = await prisma.ticket.count({
+    where: { status: TicketStatus.closed },
+  });
+  if (existing > 0) {
+    console.log(
+      `Demo tickets already present (${existing} closed) — nothing to do.`,
+    );
+    await prisma.$disconnect();
+    process.exit(0);
+  }
+}
+
 const ts = Date.now();
 
 for (const [i, t] of tickets.entries()) {

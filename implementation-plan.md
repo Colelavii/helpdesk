@@ -75,6 +75,15 @@ Goal: every inbound ticket receives an AI category suggestion, summary, and draf
 
 Goal: AI draft replies use similar resolved tickets as retrieval context.
 
+> **Shipped ahead of this phase**: auto-resolution from a *static* knowledge base
+> (`backend/knowledge-base.md`). On arrival a pg-boss job asks Claude whether that
+> document fully answers the ticket; if so it writes the reply and resolves the
+> ticket, otherwise it escalates to an agent. It adds the `new`/`processing`
+> statuses and the `aiResolvedAt`/`aiConfidence`/`aiDecision` columns — see the
+> "Ticket statuses & AI auto-resolution" section of `CLAUDE.md`. The retrieval
+> work below is complementary: it would give the same job past resolved tickets
+> as additional context, rather than replacing the static document.
+
 - [ ] Enable the `pgvector` extension in the Postgres container init script
 - [ ] Add an `embedding` column (e.g. `vector(1024)`) on `Ticket`, or a separate `TicketEmbedding` table, via a raw SQL migration
 - [ ] Choose an embeddings provider (Voyage AI `voyage-3` recommended); add API key
@@ -122,9 +131,9 @@ These aren't a phase on their own — touch them in whichever phase introduces t
 
 These are the calls that shape later phases — worth resolving before Phase 4 or 5 lands.
 
-- Reopen behaviour: does a student reply on a `closed` ticket reopen it, or create a new ticket?
+- ~~Reopen behaviour: does a student reply on a `closed` ticket reopen it, or create a new ticket?~~ **Settled — it reopens.** `ingest-inbound-email.ts` threads the reply onto the existing ticket and moves a `resolved`/`closed` ticket back to `open`. This is now load-bearing: it is the route back to a human after the AI auto-resolves a ticket.
 - Who picks the category on intake — AI auto-assigns and agent can override, or AI suggests and agent confirms before the ticket leaves a "new" state?
-- Refund-request routing: auto-assign to a specific role / person, or treat like any other category?
+- Refund-request routing: auto-assign to a specific role / person, or treat like any other category? **Partly settled** — knowledge-base §10 escalates chargebacks, disputed charges, and out-of-window refunds to a human rather than auto-answering them. Whether such a ticket is then auto-*assigned* to anyone is still open.
 - Attachments: store, ignore, or virus-scan?
 - PII in embeddings: redact requester details before embedding, or accept the risk?
 - LLM data residency: any constraint on student data leaving the region via Anthropic?

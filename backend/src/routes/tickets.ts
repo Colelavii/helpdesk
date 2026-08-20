@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   ticketsQuerySchema,
   createMessageSchema,
+  agentTicketStatuses,
   TicketStatus,
   TicketCategory,
 } from "@helpdesk/core";
@@ -32,9 +33,19 @@ ticketsRouter.get("/", async (req: Request, res: Response) => {
   const query = parseBody(ticketsQuerySchema, req.query, res);
   if (!query) return;
 
-  const orderBy: Prisma.TicketOrderByWithRelationInput = {
-    [query.sort]: query.order,
-  };
+  // `id` breaks ties so the ordering is total, not just sorted. Without it
+  // Postgres is free to return equal rows in any order, and because paging is
+  // offset-based (skip/take) that order can differ between the requests for
+  // page 1 and page 2 — the same ticket appears on both while another is never
+  // shown at all. Ties are the norm, not the exception, when sorting by status
+  // or category: five and four distinct values across the whole table.
+  //
+  // Descending because ids increase with time, so ties resolve newest-first —
+  // the same "most recent work first" the default sort gives.
+  const orderBy: Prisma.TicketOrderByWithRelationInput[] = [
+    { [query.sort]: query.order },
+    { id: "desc" },
+  ];
 
   // Build a case-insensitive substring search across subject, requester name,
   // and requester email when a non-empty search string is provided.
@@ -49,8 +60,23 @@ ticketsRouter.get("/", async (req: Request, res: Response) => {
         }
       : undefined;
 
+  // With no status filter the list hides only the window in which the
+  // auto-resolve worker still owns the ticket — it hasn't finished deciding, so
+  // showing it would put work in front of an agent that may resolve itself a
+  // second later, or change status under them while they read it.
+  //
+  // Once the worker is done the ticket is ordinary history and belongs in the
+  // list like any other, whether the AI resolved it or an agent did. Only the
+  // in-flight window is hidden, which is why this matches on status alone and
+  // ignores `aiResolvedAt` (kept as audit data, and surfaced on the detail
+  // page). Filtering by a status explicitly overrides even this, so a ticket
+  // mid-decision is still reachable via ?status=processing.
+  const defaultScope: Prisma.TicketWhereInput = {
+    status: { notIn: [TicketStatus.new, TicketStatus.processing] },
+  };
+
   const where: Prisma.TicketWhereInput = {
-    ...(query.status !== undefined && { status: query.status }),
+    ...(query.status !== undefined ? { status: query.status } : defaultScope),
     ...(query.category !== undefined && { category: query.category }),
     ...searchClause,
   };
@@ -110,6 +136,10 @@ ticketsRouter.get(
         category: true,
         createdAt: true,
         updatedAt: true,
+        // Detail only — the list keeps its select lean.
+        aiResolvedAt: true,
+        aiConfidence: true,
+        aiDecision: true,
         assignedTo: {
           select: { id: true, name: true, email: true },
         },
@@ -137,10 +167,13 @@ ticketsRouter.get(
 );
 
 // Partial ticket update. Every field is optional so callers can change any
-// subset; `assignedToId`/`category` accept null to clear.
+// subset; `assignedToId`/`category` accept null to clear. `status` is narrowed
+// to the statuses an agent owns — `new` and `processing` belong to the
+// auto-resolve worker, and hand-setting either would hide the ticket from the
+// list with nothing left running to bring it back.
 const updateTicketSchema = z.object({
   assignedToId: z.string().min(1).nullable().optional(),
-  status: z.enum(TicketStatus).optional(),
+  status: z.enum(agentTicketStatuses).optional(),
   category: z.enum(TicketCategory).nullable().optional(),
 });
 

@@ -6,6 +6,7 @@ import {
   ingestInboundEmail,
 } from "../tickets/ingest-inbound-email.ts";
 import { enqueueTicketClassification } from "../tickets/classification-queue.ts";
+import { scheduleTicketAutoResolve } from "../tickets/auto-resolve-queue.ts";
 
 export const webhooksRouter = Router();
 
@@ -32,6 +33,12 @@ webhooksRouter.post(
         error,
       );
     });
+
+    // Same reasoning, but this one handles its own failures: a new ticket is
+    // created hidden from the ticket list, so if no auto-resolve job is going to
+    // run, something has to hand the ticket to the agents. That lives in
+    // scheduleTicketAutoResolve, which is why there is no catch here.
+    await scheduleTicketAutoResolve(result);
 
     res.status(result.status === "created" ? 201 : 200).json(result);
   },

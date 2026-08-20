@@ -22,4 +22,11 @@ export default function globalSetup() {
 
   run("db:deploy");
   run("db:seed");
+  // The API filtering specs in e2e/tickets.spec.ts assert against a spread of
+  // statuses and categories that only the demo seeder produces — db:seed alone
+  // creates the admin and nothing else. Seeding it here rather than relying on
+  // a developer having run it by hand: without this the suite passes or fails
+  // on whatever the test DB happened to accumulate, and a `migrate reset`
+  // silently takes those specs red. --if-missing keeps repeat runs a no-op.
+  run("src/seed-demo-tickets.ts --if-missing");
 }

@@ -44,6 +44,9 @@ const ticket: TicketWithThread = {
       createdAt: "2024-03-20T10:00:00.000Z",
     },
   ],
+  aiResolvedAt: null,
+  aiConfidence: null,
+  aiDecision: null,
 };
 
 function renderSummary(overrides: Partial<TicketWithThread> = {}): User {

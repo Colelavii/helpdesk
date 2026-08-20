@@ -46,6 +46,9 @@ function ticketWith(messages: TicketMessage[]): TicketWithThread {
     createdAt: "2024-03-20T10:00:00.000Z",
     updatedAt: "2024-03-20T11:00:00.000Z",
     messages,
+    aiResolvedAt: null,
+    aiConfidence: null,
+    aiDecision: null,
   };
 }
 

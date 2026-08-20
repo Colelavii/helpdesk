@@ -106,6 +106,26 @@ describe("TicketsPage", () => {
     ).toHaveAttribute("href", "/tickets/2");
   });
 
+  // The auto-resolve statuses are filtered out of the default list by the
+  // server, so these rows only appear when someone filters for them — but the
+  // table still has to label them rather than rendering a blank badge.
+  it("renders a badge for the auto-resolve statuses", async () => {
+    mockGet().mockResolvedValue({
+      data: {
+        tickets: [
+          { ...sampleTickets[0], id: 3, status: TicketStatus.new },
+          { ...sampleTickets[1], id: 4, status: TicketStatus.processing },
+        ],
+        total: 2,
+      },
+    });
+
+    renderWithClient(<TicketsPage />);
+
+    expect(await screen.findByText(TicketStatus.new)).toBeInTheDocument();
+    expect(screen.getByText(TicketStatus.processing)).toBeInTheDocument();
+  });
+
   it("shows the empty state inside the table when the API returns no tickets", async () => {
     mockGet().mockResolvedValue({ data: { tickets: [], total: 0 } });
 

@@ -16,7 +16,14 @@ enum Role {
   agent
 }
 
+// `new` and `processing` are the AI auto-resolve window: a ticket arrives as
+// `new`, the auto-resolve worker claims it as `processing`, and it leaves as
+// `resolved` (answered from the knowledge base) or `open` (escalated to an
+// agent). Both are hidden from the default ticket list so an agent never picks
+// up a ticket the model is mid-way through answering.
 enum TicketStatus {
+  new
+  processing
   open
   resolved
   closed
@@ -111,11 +118,19 @@ model Ticket {
   subject        String
   requesterEmail String
   requesterName  String
-  status         TicketStatus    @default(open)
+  status         TicketStatus    @default(new)
   category       TicketCategory?
   assignedToId   String?
   assignedTo     User?           @relation(fields: [assignedToId], references: [id])
   messages       Message[]
+  // Set only when the auto-resolve worker answered the ticket itself. Kept as
+  // audit data after a student reply reopens the ticket, so the list query keys
+  // its "hide AI-resolved" rule on the status as well (see routes/tickets.ts).
+  aiResolvedAt   DateTime?
+  // The model's own 0–1 confidence and its stated reason, recorded on both
+  // outcomes so an escalation can be explained without re-running the model.
+  aiConfidence   Float?
+  aiDecision     String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 

@@ -36,11 +36,17 @@ const WEBHOOK = `${BACKEND}/api/webhooks/inbound-email`;
 const TICKETS_API = `${BACKEND}/api/tickets`;
 
 // Monotonically increasing counter ensures uniqueness even when multiple calls
-// within a test happen in the same millisecond.
+// within a test happen in the same millisecond. The random part covers the gap
+// the counter can't: the suite runs fullyParallel, so each worker loads this
+// module fresh with its own counter starting at zero — two workers calling this
+// in the same millisecond would otherwise mint the same suffix, and a suffix
+// that collides becomes a duplicate email Message-Id, which the webhook
+// correctly dedupes with a 200 instead of creating the ticket the test expects.
+const workerToken = Math.random().toString(36).slice(2, 10);
 let counter = 0;
 function uniqueSuffix(): string {
   counter += 1;
-  return `${Date.now()}-${counter}`;
+  return `${Date.now()}-${workerToken}-${counter}`;
 }
 
 // ─── API: auth enforcement ─────────────────────────────────────────────────────
@@ -108,13 +114,20 @@ test.describe("GET /api/tickets — shape and ordering", () => {
     // the first in the response. Using sequential awaits guarantees distinct
     // createdAt timestamps in practice; if they land in the same millisecond,
     // the auto-increment id (which is also monotonic) is used as the tiebreaker.
+    //
+    // Both carry a shared run token so the assertion can filter the list down
+    // to just these two. Reading the unfiltered list would put them on page 1
+    // only by luck: the default pageSize is 10, the test DB is persistent, and
+    // the suite runs fullyParallel — another spec's inserts can push them off.
+    const token = `ORDER-${uniqueSuffix()}`;
+
     const suffix1 = uniqueSuffix();
     const res1 = await request.post(WEBHOOK, {
       headers: { "x-inbound-secret": SECRET },
       data: {
         fromEmail: `order-first-${suffix1}@example.com`,
         fromName: "Order First",
-        subject: `Order First Ticket ${suffix1}`,
+        subject: `${token} Order First Ticket ${suffix1}`,
         body: "First email.",
         messageId: `<order-first-${suffix1}@mail.example.com>`,
       },
@@ -128,7 +141,7 @@ test.describe("GET /api/tickets — shape and ordering", () => {
       data: {
         fromEmail: `order-second-${suffix2}@example.com`,
         fromName: "Order Second",
-        subject: `Order Second Ticket ${suffix2}`,
+        subject: `${token} Order Second Ticket ${suffix2}`,
         body: "Second email.",
         messageId: `<order-second-${suffix2}@mail.example.com>`,
       },
@@ -140,7 +153,9 @@ test.describe("GET /api/tickets — shape and ordering", () => {
     // must appear at a smaller index in the newest-first list.
     expect(id2).toBeGreaterThan(id1);
 
-    const listResp = await request.get(TICKETS_API);
+    const listResp = await request.get(
+      `${TICKETS_API}?search=${encodeURIComponent(token)}`,
+    );
     expect(listResp.status()).toBe(200);
     const { tickets } = await listResp.json() as { tickets: Array<{ id: number }> };
 
@@ -251,14 +266,18 @@ test.describe("GET /api/tickets — server-side sorting", () => {
     request,
   }) => {
     // Seed only two tickets to keep the assertion simple; we just need to verify
-    // the default ordering (createdAt desc) has not regressed.
+    // the default ordering (createdAt desc) has not regressed. The shared run
+    // token scopes the assertion to these two — see the ordering test above for
+    // why reading the unfiltered list is unreliable here.
+    const token = `DEFAULTSORT-${uniqueSuffix()}`;
+
     const suffix1 = uniqueSuffix();
     const res1 = await request.post(WEBHOOK, {
       headers: { "x-inbound-secret": SECRET },
       data: {
         fromEmail: `default-sort-a-${suffix1}@example.com`,
         fromName: "Default Sort A",
-        subject: `Default sort older ${suffix1}`,
+        subject: `${token} Default sort older ${suffix1}`,
         body: "Older ticket.",
         messageId: `<default-sort-a-${suffix1}@mail.example.com>`,
       },
@@ -272,7 +291,7 @@ test.describe("GET /api/tickets — server-side sorting", () => {
       data: {
         fromEmail: `default-sort-b-${suffix2}@example.com`,
         fromName: "Default Sort B",
-        subject: `Default sort newer ${suffix2}`,
+        subject: `${token} Default sort newer ${suffix2}`,
         body: "Newer ticket.",
         messageId: `<default-sort-b-${suffix2}@mail.example.com>`,
       },
@@ -283,7 +302,9 @@ test.describe("GET /api/tickets — server-side sorting", () => {
     // id2 was created after id1 — it must have a higher auto-increment id.
     expect(id2).toBeGreaterThan(id1);
 
-    const listResp = await request.get(TICKETS_API);
+    const listResp = await request.get(
+      `${TICKETS_API}?search=${encodeURIComponent(token)}`,
+    );
     expect(listResp.status()).toBe(200);
     const { tickets } = await listResp.json() as { tickets: Array<{ id: number }> };
 
@@ -294,6 +315,54 @@ test.describe("GET /api/tickets — server-side sorting", () => {
     expect(idx2).toBeGreaterThanOrEqual(0);
     // Newer ticket must appear before the older one.
     expect(idx2).toBeLessThan(idx1);
+  });
+
+  // Sorting by status ties rows together — there are only five distinct values
+  // across the whole table. Without a tiebreak in the route's orderBy, Postgres
+  // may return equal rows in a different order for each page request, and
+  // because paging is offset-based the same ticket then lands on two pages
+  // while another is never shown at all.
+  //
+  // Scoped to this test's own tickets with a search token so concurrent inserts
+  // from other specs can't change the result set mid-walk — every seeded ticket
+  // is `open`, so they are all tied with each other and nothing else matches.
+  test("paging a tied sort returns each ticket exactly once", async ({
+    request,
+  }) => {
+    const token = `TIEBREAK-${uniqueSuffix()}`;
+    const seededIds: number[] = [];
+    for (let i = 0; i < 12; i += 1) {
+      const suffix = uniqueSuffix();
+      const res = await request.post(WEBHOOK, {
+        headers: { "x-inbound-secret": SECRET! },
+        data: {
+          fromEmail: `tiebreak-${suffix}@example.com`,
+          fromName: `Tiebreak Student ${i}`,
+          subject: `${token} ticket ${i}`,
+          body: "Tiebreak test email.",
+          messageId: `<tiebreak-${suffix}@mail.example.com>`,
+        },
+      });
+      expect(res.status()).toBe(201);
+      const { ticketId } = (await res.json()) as { ticketId: number };
+      seededIds.push(ticketId);
+    }
+
+    const pageSize = 5;
+    const query = `search=${encodeURIComponent(token)}&sort=status&order=asc&pageSize=${pageSize}`;
+    const seen: number[] = [];
+    for (let page = 1; page <= Math.ceil(seededIds.length / pageSize); page += 1) {
+      const resp = await request.get(`${TICKETS_API}?${query}&page=${page}`);
+      expect(resp.status()).toBe(200);
+      const { tickets } = (await resp.json()) as {
+        tickets: Array<{ id: number }>;
+      };
+      seen.push(...tickets.map((t) => t.id));
+    }
+
+    // Every seeded ticket exactly once — no repeats across pages, none dropped.
+    expect(new Set(seen).size).toBe(seen.length);
+    expect([...seen].sort()).toEqual([...seededIds].sort());
   });
 
   test("sort=password&order=asc → 400 (whitelist enforced)", async ({
@@ -339,6 +408,12 @@ test.describe("/tickets page — UI", () => {
     expect(seed.status()).toBe(201);
 
     await page.goto("/tickets");
+
+    // Narrow the table to this ticket before asserting. The list shows one
+    // newest-first page of ten, the test DB is persistent, and the suite runs
+    // fullyParallel — another spec seeding at the same moment can push this
+    // ticket off page one, which has nothing to do with what's under test.
+    await page.getByRole("searchbox", { name: /search tickets/i }).fill(suffix);
 
     // Subject must appear in a table cell.
     await expect(

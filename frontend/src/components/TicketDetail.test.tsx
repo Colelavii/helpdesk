@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { screen } from "@testing-library/react";
-import { TicketStatus, TicketCategory, type Ticket } from "@helpdesk/core";
+import {
+  TicketStatus,
+  TicketCategory,
+  type TicketWithThread,
+} from "@helpdesk/core";
 import TicketDetail from "./TicketDetail";
 import { renderWithClient } from "../test/render";
 
@@ -11,7 +15,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
   timeStyle: "short",
 });
 
-const ticket: Ticket = {
+const ticket: TicketWithThread = {
   id: 7,
   subject: "Cannot access the portal",
   requesterEmail: "sam@example.com",
@@ -20,6 +24,11 @@ const ticket: Ticket = {
   category: TicketCategory.technical,
   createdAt: "2024-03-20T10:00:00.000Z",
   updatedAt: "2024-03-21T09:30:00.000Z",
+  assignedTo: null,
+  messages: [],
+  aiResolvedAt: null,
+  aiConfidence: null,
+  aiDecision: null,
 };
 
 describe("TicketDetail", () => {
@@ -67,5 +76,46 @@ describe("TicketDetail", () => {
     expect(
       screen.queryByText(dateTimeFormatter.format(new Date(ticket.updatedAt))),
     ).not.toBeInTheDocument();
+  });
+
+  // The auto-resolve worker's reply is an ordinary outbound message in the
+  // thread, so without this note an agent would read it as a colleague's.
+  describe("automatic resolution", () => {
+    const aiResolvedAt = "2024-03-21T09:30:00.000Z";
+
+    it("notes when the knowledge base answered the ticket, and when", () => {
+      renderWithClient(<TicketDetail ticket={{ ...ticket, aiResolvedAt }} />);
+
+      expect(
+        screen.getByText(/answered automatically from the knowledge base/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          new RegExp(dateTimeFormatter.format(new Date(aiResolvedAt))),
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it("says nothing on a ticket the AI did not resolve", () => {
+      renderWithClient(<TicketDetail ticket={ticket} />);
+
+      expect(
+        screen.queryByText(/answered automatically/i),
+      ).not.toBeInTheDocument();
+    });
+
+    // The note is about who wrote the reply, so it has to survive a student
+    // replying and reopening the ticket — aiResolvedAt is kept, not cleared.
+    it("stays on a reopened ticket", () => {
+      renderWithClient(
+        <TicketDetail
+          ticket={{ ...ticket, aiResolvedAt, status: TicketStatus.open }}
+        />,
+      );
+
+      expect(
+        screen.getByText(/answered automatically from the knowledge base/i),
+      ).toBeInTheDocument();
+    });
   });
 });

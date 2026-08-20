@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import {
+  agentTicketStatuses,
   TicketStatus,
   TicketCategory,
   type TicketAssignee,
@@ -27,6 +28,26 @@ interface TicketUpdate {
 // Sentinels for the "empty" options (Select values must be non-empty strings).
 const UNASSIGNED = "__unassigned__";
 const UNCATEGORISED = "__uncategorised__";
+
+// Agents own open/resolved/closed; `new` and `processing` belong to the
+// auto-resolve worker and the PATCH route rejects them. They still have to
+// appear — disabled — while a ticket is actually in one, because the trigger
+// renders the matching item's label and would otherwise sit blank on a ticket
+// opened by direct URL mid-auto-resolve.
+function statusOptions(
+  current: TicketStatus,
+): { status: TicketStatus; selectable: boolean }[] {
+  const selectable = agentTicketStatuses.map((status) => ({
+    status,
+    selectable: true,
+  }));
+
+  return agentTicketStatuses.includes(
+    current as (typeof agentTicketStatuses)[number],
+  )
+    ? selectable
+    : [{ status: current, selectable: false }, ...selectable];
+}
 
 async function fetchAssignees(signal: AbortSignal): Promise<TicketAssignee[]> {
   const { data } = await axios.get<{ users: TicketAssignee[] }>(
@@ -82,8 +103,13 @@ export default function UpdateTicket({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {Object.values(TicketStatus).map((status) => (
-                  <SelectItem key={status} value={status} className="capitalize">
+                {statusOptions(ticket.status).map(({ status, selectable }) => (
+                  <SelectItem
+                    key={status}
+                    value={status}
+                    disabled={!selectable}
+                    className="capitalize"
+                  >
                     {status}
                   </SelectItem>
                 ))}

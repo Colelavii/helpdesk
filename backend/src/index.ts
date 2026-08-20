@@ -7,6 +7,7 @@ import { ticketsRouter } from "./routes/tickets.ts";
 import { webhooksRouter } from "./routes/webhooks.ts";
 import { startQueue, stopQueue } from "./queue.ts";
 import { registerClassificationWorker } from "./tickets/classification-queue.ts";
+import { registerAutoResolveWorker } from "./tickets/auto-resolve-queue.ts";
 
 const app = express();
 const port = Number(process.env.PORT) || 3001;
@@ -28,15 +29,16 @@ app.use("/api/users", usersRouter);
 app.use("/api/tickets", ticketsRouter);
 app.use("/api/webhooks", webhooksRouter);
 
-// The API serves regardless of the queue's health: classification is an
-// enhancement, and an inbound email is still stored (and answerable) without it.
-// Failing to boot over it would take the whole helpdesk down with the AI.
+// The API serves regardless of the queue's health: the background jobs are an
+// enhancement, and an inbound email is still stored (and answerable) without
+// them. Failing to boot over it would take the whole helpdesk down with the AI.
 try {
   await startQueue();
   await registerClassificationWorker();
+  await registerAutoResolveWorker();
 } catch (error) {
   console.error(
-    "Job queue unavailable — inbound tickets will not be auto-classified",
+    "Job queue unavailable — inbound tickets will not be auto-classified or auto-resolved",
     error,
   );
 }
@@ -45,7 +47,7 @@ const server = app.listen(port, () => {
   console.log(`Backend listening on http://localhost:${port}`);
 });
 
-// Stop taking new work, let an in-flight classification finish, then exit.
+// Stop taking new work, let an in-flight job finish, then exit.
 async function shutdown(): Promise<void> {
   server.close();
   await stopQueue();

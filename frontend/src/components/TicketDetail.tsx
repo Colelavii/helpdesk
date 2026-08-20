@@ -1,4 +1,5 @@
-import type { Ticket } from "@helpdesk/core";
+import { Sparkles } from "lucide-react";
+import type { TicketWithThread } from "@helpdesk/core";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { linkVariants } from "@/components/ui/link";
 import Field from "@/components/Field";
@@ -12,7 +13,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
 // The ticket's fixed facts — what it's about, who raised it, and when. The
 // conversation lives in MessageThread and the editable fields in the detail
 // page's sidebar. Takes the whole ticket so callers pass the object they hold.
-export default function TicketDetail({ ticket }: { ticket: Ticket }) {
+export default function TicketDetail({ ticket }: { ticket: TicketWithThread }) {
   return (
     <Card>
       <CardHeader>
@@ -37,6 +38,18 @@ export default function TicketDetail({ ticket }: { ticket: Ticket }) {
             </span>
           </Field>
         </dl>
+        {ticket.aiResolvedAt !== null && (
+          // Set only when the auto-resolve worker answered the ticket itself, so
+          // an agent reading the thread knows the reply wasn't written by a
+          // colleague. It survives a student's reply reopening the ticket.
+          <p className="text-muted-foreground mt-4 flex items-start gap-2 text-sm">
+            <Sparkles aria-hidden className="mt-0.5 size-4 shrink-0" />
+            <span>
+              Answered automatically from the knowledge base on{" "}
+              {dateTimeFormatter.format(new Date(ticket.aiResolvedAt))}.
+            </span>
+          </p>
+        )}
       </CardContent>
     </Card>
   );

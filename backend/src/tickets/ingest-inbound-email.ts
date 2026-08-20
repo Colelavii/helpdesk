@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TicketStatus } from "@helpdesk/core";
 import { prisma } from "../prisma.ts";
 import { normalizeSubject } from "./normalize-subject.ts";
 import { sanitizeHtml } from "./sanitize-html.ts";
@@ -125,12 +126,16 @@ export async function ingestInboundEmail(
   }
 
   // 3. Otherwise this starts a new ticket with its first inbound message.
+  // Arrives as `new` (the auto-resolve worker's claim window) rather than
+  // `open` — scheduleTicketAutoResolve (called by the webhook route right
+  // after this) assumes exactly that, and only moves it to `open` itself when
+  // no worker will ever pick it up.
   const ticket = await prisma.ticket.create({
     data: {
       subject,
       requesterEmail: fromEmail,
       requesterName: fromName,
-      status: "open",
+      status: TicketStatus.new,
       messages: {
         create: {
           direction: "inbound",
