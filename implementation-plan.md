@@ -97,11 +97,13 @@ Goal: AI draft replies use similar resolved tickets as retrieval context.
 
 Goal: admin can create and manage agents; every signed-in user gets a useful overview.
 
-- [ ] Backend admin-only endpoints: `GET /users`, `POST /users` (create agent with email + initial password), `PATCH /users/:id` (disable / enable, change role)
-- [ ] Frontend admin-only user management page (visible from sidebar only to admins)
-- [ ] Backend dashboard endpoint: counts by status, counts by category, tickets created today / week, average time-to-resolve
-- [ ] Frontend dashboard page with summary cards
-- [ ] Sidebar navigation showing pages permitted by current role
+- [x] Backend admin-only endpoints: `GET /users`, `POST /users` (create agent with email + initial password), `PATCH /users/:id` (disable / enable, change role)
+- [x] Frontend admin-only user management page (visible from sidebar only to admins)
+- [x] Backend dashboard endpoint — `GET /api/tickets/stats` (`backend/src/tickets/ticket-stats.ts`): total, open, resolved-by-AI, % resolved by AI, average time-to-resolve, plus tickets-per-day for the trailing 30 days. Needed a new `Ticket.resolvedAt` column; counts by category are **not** built yet
+- [x] Frontend dashboard page with summary cards — `frontend/src/pages/DashboardPage.tsx`, mounted at `/` (replaced the dead `HomePage` placeholder), open to any signed-in staff member
+- [x] 30-day tickets-per-day bar chart below the cards (`TicketsPerDayChart.tsx`, hand-rolled — no charting dependency)
+- [x] An "AI" agent user (`bun run db:seed:ai`) that inbound tickets are assigned to during auto-resolution, and released from on escalation
+- [ ] Sidebar navigation showing pages permitted by current role — still a top nav, not a sidebar
 
 ## Phase 8 — Production Deployment
 
@@ -132,8 +134,9 @@ These aren't a phase on their own — touch them in whichever phase introduces t
 These are the calls that shape later phases — worth resolving before Phase 4 or 5 lands.
 
 - ~~Reopen behaviour: does a student reply on a `closed` ticket reopen it, or create a new ticket?~~ **Settled — it reopens.** `ingest-inbound-email.ts` threads the reply onto the existing ticket and moves a `resolved`/`closed` ticket back to `open`. This is now load-bearing: it is the route back to a human after the AI auto-resolves a ticket.
+- ~~What happens to the assignee when a reply reopens a ticket?~~ **Settled** — an AI-resolved ticket is released to the shared pool (its answer demonstrably didn't hold, so it needs whoever is free); an agent-resolved ticket keeps its assignee, since the person who answered it is the one who should pick the thread back up. Implemented as a second, narrower `updateMany` in the reopen transaction, scoped to the AI's id.
 - Who picks the category on intake — AI auto-assigns and agent can override, or AI suggests and agent confirms before the ticket leaves a "new" state?
-- Refund-request routing: auto-assign to a specific role / person, or treat like any other category? **Partly settled** — knowledge-base §10 escalates chargebacks, disputed charges, and out-of-window refunds to a human rather than auto-answering them. Whether such a ticket is then auto-*assigned* to anyone is still open.
+- ~~Refund-request routing: auto-assign to a specific role / person, or treat like any other category?~~ **Settled — treated like any other category.** Knowledge-base §10 escalates chargebacks, disputed charges, and out-of-window refunds to a human rather than auto-answering them, and every escalated ticket is left **unassigned** for whoever picks it up. Per-category routing would need a concept the app doesn't have yet (no teams, queues, or skills on `User`) — revisit if refunds actually need a named owner.
 - Attachments: store, ignore, or virus-scan?
 - PII in embeddings: redact requester details before embedding, or accept the risk?
 - LLM data residency: any constraint on student data leaving the region via Anthropic?

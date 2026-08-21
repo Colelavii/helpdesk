@@ -70,3 +70,38 @@ export interface TicketWithThread extends Ticket {
   aiConfidence: number | null;
   aiDecision: string | null;
 }
+
+// The dashboard's headline figures, as the stats endpoint returns them.
+//
+// `total` counts every status, including the `new`/`processing` window the ticket
+// list hides: that window is hidden because showing an agent a ticket the model
+// may resolve a second later is unhelpful, which is not a reason to leave it out
+// of a volume count.
+//
+// "Resolved by AI" means the model answered it *and the answer held*:
+// `aiResolvedAt` is kept as audit data after a student's reply reopens a ticket,
+// so counting it alone would headline tickets currently sitting in an agent's
+// queue, and could push the count above the number of resolved tickets. The
+// percentage is over `concluded` rather than `total` so it measures how well the
+// model does on tickets that reached an outcome, not how big the backlog is —
+// `concluded` travels with it so the UI can show the ratio it came from.
+export interface TicketStats {
+  total: number;
+  open: number;
+  concluded: number;
+  aiResolved: number;
+  // Null rather than 0 when there is nothing to divide by, so the UI can say
+  // "no data yet" instead of claiming the AI resolved 0% of them.
+  aiResolvedPercent: number | null;
+  averageResolutionMinutes: number | null;
+}
+
+// One day's intake, for the dashboard's 30-day chart. `day` is a plain
+// `YYYY-MM-DD` string in UTC rather than a timestamp: it's a bucket label, and
+// sending it as a Date would let the browser's timezone shift a ticket into the
+// neighbouring bar. Every day in the range is present, including quiet ones with
+// a count of 0 — a missing bar would read as "no data" instead of "no tickets".
+export interface TicketsPerDay {
+  day: string;
+  count: number;
+}

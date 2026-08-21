@@ -95,4 +95,59 @@ describe("UpdateTicket", () => {
       ).not.toHaveAttribute("aria-disabled", "true");
     });
   });
+
+  // Exactly the same problem as the status picker, and now the normal case: the
+  // AI agent owns every ticket in the auto-resolve window but is deliberately
+  // absent from /assignees, since it must not be assignable by hand.
+  describe("an assignee missing from the picker's list", () => {
+    const assignedToAi = {
+      ...ticket,
+      assignedTo: { id: "ai-1", name: "AI", email: "ai@helpdesk.local" },
+    };
+
+    function renderAssignedToAi() {
+      // The AI is not in the fetched list.
+      mockGet().mockResolvedValue({
+        data: {
+          users: [
+            { id: "u-2", name: "Glen Agent", email: "glen@example.com" },
+          ],
+        },
+      });
+      renderWithClient(<UpdateTicket ticket={assignedToAi} />);
+    }
+
+    // Without this the trigger falls back to its "Unassigned" placeholder — it
+    // would claim nobody owns a ticket the AI is actively working on.
+    it("names the assignee on the trigger rather than showing Unassigned", async () => {
+      renderAssignedToAi();
+
+      const trigger = await screen.findByRole("combobox", {
+        name: /assign ticket/i,
+      });
+      expect(trigger).toHaveTextContent("AI");
+      expect(trigger).not.toHaveTextContent("Unassigned");
+    });
+
+    it("lists it, but not as something the agent can pick", async () => {
+      const user = userEvent.setup();
+      renderAssignedToAi();
+
+      await user.click(
+        await screen.findByRole("combobox", { name: /assign ticket/i }),
+      );
+      const listbox = await screen.findByRole("listbox");
+
+      expect(
+        within(listbox).getByRole("option", { name: "AI" }),
+      ).toHaveAttribute("aria-disabled", "true");
+      expect(
+        within(listbox).getByRole("option", { name: "Glen Agent" }),
+      ).not.toHaveAttribute("aria-disabled", "true");
+      // Unassigning is still allowed — that's how an agent takes it off the AI.
+      expect(
+        within(listbox).getByRole("option", { name: "Unassigned" }),
+      ).not.toHaveAttribute("aria-disabled", "true");
+    });
+  });
 });

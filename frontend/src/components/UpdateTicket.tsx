@@ -49,6 +49,23 @@ function statusOptions(
     : [{ status: current, selectable: false }, ...selectable];
 }
 
+// Same problem as statusOptions, for the same reason: the trigger renders the
+// matching item's label, so an assignee missing from the picker's list would
+// leave it showing the "Unassigned" placeholder — claiming nobody owns a ticket
+// that someone does. The AI agent is deliberately excluded from /assignees (it
+// must not be assignable by hand) yet owns every ticket in the auto-resolve
+// window, so this is the normal case, not an edge one.
+function assigneeOptions(
+  assignees: TicketAssignee[],
+  current: TicketAssignee | null,
+): { user: TicketAssignee; selectable: boolean }[] {
+  const selectable = assignees.map((user) => ({ user, selectable: true }));
+
+  return !current || assignees.some((user) => user.id === current.id)
+    ? selectable
+    : [{ user: current, selectable: false }, ...selectable];
+}
+
 async function fetchAssignees(signal: AbortSignal): Promise<TicketAssignee[]> {
   const { data } = await axios.get<{ users: TicketAssignee[] }>(
     "/api/tickets/assignees",
@@ -167,11 +184,17 @@ export default function UpdateTicket({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
-                {assignees.map((user) => (
-                  <SelectItem key={user.id} value={user.id}>
-                    {user.name}
-                  </SelectItem>
-                ))}
+                {assigneeOptions(assignees, ticket.assignedTo).map(
+                  ({ user, selectable }) => (
+                    <SelectItem
+                      key={user.id}
+                      value={user.id}
+                      disabled={!selectable}
+                    >
+                      {user.name}
+                    </SelectItem>
+                  ),
+                )}
               </SelectContent>
             </Select>
           </Field>

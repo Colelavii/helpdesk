@@ -15,6 +15,7 @@
 
 import { prisma } from "./prisma.ts";
 import { TicketStatus, TicketCategory } from "./generated/prisma/enums.ts";
+import { aiAgentId } from "./tickets/ai-agent.ts";
 
 // ─── Data pools ──────────────────────────────────────────────────────────────
 
@@ -679,6 +680,10 @@ if (process.argv.includes("--if-missing")) {
 
 const ts = Date.now();
 
+// Assigned to the AI-resolved rows below, matching what the real auto-resolve
+// worker leaves behind. Null when the AI user hasn't been seeded.
+const aiId = await aiAgentId();
+
 for (const [i, t] of tickets.entries()) {
   const student = students[i % students.length];
   const suffix = `${ts}-${i}`;
@@ -686,6 +691,17 @@ for (const [i, t] of tickets.entries()) {
   // Space the createdAt values 4 hours apart so newest-first ordering is
   // clearly visible in the UI (100 tickets × 4 h = ~17 days of history).
   const createdAt = new Date(ts - (tickets.length - i) * 4 * 60 * 60 * 1000);
+
+  // A resolved ticket needs a resolvedAt or the dashboard's average
+  // time-to-resolve has nothing to average. Spread deterministically over
+  // 45 min–9 h so the figure looks like real support work rather than a
+  // constant, and every third one is attributed to the AI so the
+  // resolved-by-AI metrics aren't a flat zero in a fresh dev database.
+  const isResolved = t.status === TicketStatus.resolved;
+  const resolvedAt = isResolved
+    ? new Date(createdAt.getTime() + ((i % 12) + 1) * 45 * 60 * 1000)
+    : null;
+  const byAi = isResolved && i % 3 === 0;
 
   await prisma.ticket.create({
     data: {
@@ -695,7 +711,14 @@ for (const [i, t] of tickets.entries()) {
       status: t.status,
       category: t.category,
       createdAt,
-      updatedAt: createdAt,
+      updatedAt: resolvedAt ?? createdAt,
+      resolvedAt,
+      ...(byAi && {
+        aiResolvedAt: resolvedAt,
+        aiConfidence: 0.86 + ((i % 5) * 0.02),
+        aiDecision: "The knowledge base fully covers this request.",
+        assignedToId: aiId,
+      }),
       messages: {
         create: {
           direction: "inbound",

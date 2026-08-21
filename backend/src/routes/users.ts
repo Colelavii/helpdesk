@@ -5,6 +5,7 @@ import { requireAuth } from "../require-auth.ts";
 import { requireAdmin } from "../require-admin.ts";
 import { prisma } from "../prisma.ts";
 import { parseBody } from "../parse-body.ts";
+import { aiAgentEmail } from "../tickets/ai-agent.ts";
 
 export const usersRouter = Router();
 
@@ -23,7 +24,15 @@ usersRouter.get("/", async (_req: Request, res: Response) => {
     },
     orderBy: { createdAt: "asc" },
   });
-  res.json({ users });
+
+  // The AI agent is listed like anyone else, but flagged so the UI can label it
+  // and hide the edit/delete controls the routes below reject anyway. Sent as a
+  // field rather than left to the client to infer, so the AI's email stays a
+  // backend concern.
+  const aiEmail = aiAgentEmail();
+  res.json({
+    users: users.map((user) => ({ ...user, isAiAgent: user.email === aiEmail })),
+  });
 });
 
 usersRouter.post("/", async (req: Request, res: Response) => {
@@ -80,6 +89,13 @@ usersRouter.patch(
       res.status(404).json({ error: "User not found" });
       return;
     }
+    // The AI agent is identified by its email, so letting an admin edit it would
+    // let them rename it and permanently break the auto-resolve assignment
+    // lookup. Its name and password are not meaningful to change either.
+    if (existing.email === aiAgentEmail()) {
+      res.status(403).json({ error: "The AI agent cannot be modified" });
+      return;
+    }
 
     // Better Auth stores emails lowercased; normalize before comparing/looking
     // up so a case-only change isn't mistaken for a real one.
@@ -131,6 +147,13 @@ usersRouter.delete(
     }
     if (existing.role === "admin") {
       res.status(403).json({ error: "Admin users cannot be deleted" });
+      return;
+    }
+    // Deleting the AI agent would null assignedToId on every ticket currently
+    // in the auto-resolve window (the transaction below does exactly that) and
+    // silently stop intake assigning tickets to it from then on.
+    if (existing.email === aiAgentEmail()) {
+      res.status(403).json({ error: "The AI agent cannot be modified" });
       return;
     }
 

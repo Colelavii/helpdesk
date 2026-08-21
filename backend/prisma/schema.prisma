@@ -131,6 +131,12 @@ model Ticket {
   // outcomes so an escalation can be explained without re-running the model.
   aiConfidence   Float?
   aiDecision     String?
+  // Set when the ticket *reaches* `resolved`, by the auto-resolve worker or an
+  // agent, and cleared when a student's reply reopens it. Survives
+  // `resolved -> closed`. `updatedAt` can't stand in for it: any later edit
+  // bumps that, so the resolution time would drift every time the ticket is
+  // touched. Time-to-resolve on the dashboard is `resolvedAt - createdAt`.
+  resolvedAt     DateTime?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 

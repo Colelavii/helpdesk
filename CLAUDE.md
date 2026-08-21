@@ -58,20 +58,41 @@ Deferred work runs through **pg-boss**, a job queue backed by the same PostgreSQ
 
 `TicketStatus` has five values, and **two of them belong to the auto-resolve worker, not to agents**:
 
-| Status | Owner | Meaning |
-| --- | --- | --- |
-| `new` | worker | Just arrived. The default on `Ticket.status`. |
-| `processing` | worker | Claimed; the model is deciding. |
-| `open` | agent | Needs a human — either escalated by the model, or reopened by a student reply. |
-| `resolved` | agent / worker | Answered. |
-| `closed` | agent | No further action expected. |
+| Status | Owner | Assignee | Meaning |
+| --- | --- | --- | --- |
+| `new` | worker | AI agent | Just arrived. The default on `Ticket.status`. |
+| `processing` | worker | AI agent | Claimed; the model is deciding. |
+| `open` | agent | nobody, or the agent who answered it | Needs a human — either escalated by the model, or reopened by a student reply. |
+| `resolved` | agent / worker | AI agent if it answered, else the agent | Answered. |
+| `closed` | agent | unchanged | No further action expected. |
 
 - **`new` and `processing` are hidden from the ticket list** — and *only* those two. The `where` clause lives in the list handler in `backend/src/routes/tickets.ts`; passing an explicit `?status=` overrides it, so nothing is unreachable. The hidden window is exactly the period the worker still owns the ticket: showing it then would put work in front of an agent that may resolve itself a second later. Once the worker is done the ticket is ordinary history and appears like any other, **whether the AI resolved it or an agent did** — `aiResolvedAt` does not affect list visibility, it is audit data surfaced on the detail page.
 - **Agents can't set `new`/`processing`.** The PATCH body uses `agentTicketStatuses` from `@helpdesk/core` (not the full enum), and the detail page's status picker maps over the same list — rendering the current status as a *disabled* item when the worker still owns it, so the trigger isn't blank.
 - **The flow**: inbound webhook creates the ticket as `new` → `scheduleTicketAutoResolve` enqueues a job → the worker claims it as `processing` → `resolveTicket` asks Claude whether `backend/knowledge-base.md` fully answers it → on `resolve` above the confidence threshold, an outbound reply is written and the ticket is `resolved` with `aiResolvedAt`/`aiConfidence`/`aiDecision` set; otherwise it goes to `open` with the reason recorded.
-- **A ticket must never be stranded in `new` or `processing`** — it would be invisible to every agent with nothing left to move it on. Three paths guard this: a transient failure returns the ticket to `new` so the retry re-claims it; an unfixable one (missing API key, unreadable knowledge base) sends it to `open`; and `scheduleTicketAutoResolve` calls `skipAutoResolve` when no job will ever run (feature disabled, or the queue refused it). The claim also accepts a ticket already in `processing`, so a retry can recover one whose worker died mid-call.
+- **A ticket must never be stranded in `new` or `processing`** — it would be invisible to every agent with nothing left to move it on. Three paths guard this: a transient failure returns the ticket to `new` so the retry re-claims it; an unfixable one (missing API key, unreadable knowledge base) sends it to `open`; and `scheduleTicketAutoResolve` calls `skipAutoResolve` when no job will ever run (feature disabled, or the queue refused it). The claim also accepts a ticket already in `processing`, so a retry can recover one whose worker died mid-call. **Every path that ends at `open` also clears `assignedToId`**, and each does it in the same `updateMany` as the status change so the two can't drift; the transient path back to `new` deliberately keeps the assignment, since the AI still owns the ticket and the retry re-claims it.
+
+### The AI agent user
+
+Inbound tickets are assigned to a dedicated **"AI" `User`** for the duration of the auto-resolve window, so a ticket never shows a status saying the model owns it next to an empty assignee.
+
+- **Created by `bun run db:seed:ai`** (`backend/src/seed-ai-agent.ts`), idempotent like the admin seed. Identified by email — `AI_AGENT_EMAIL`, default `ai@helpdesk.local` — resolved through `aiAgentEmail()` / `aiAgentId()` in `backend/src/tickets/ai-agent.ts` (lowercased, since Better Auth stores emails lowercased; id cached per process, **on success only**, so seeding it after boot doesn't need a restart).
+- **It deliberately has no `credential` account** — the seed calls `createUser` and *not* `linkAccount`. That omission is the mechanism: email/password is the only enabled provider and sign-up is disabled, so an account with no credential row cannot authenticate and no API route can add one. Don't "fix" it. Its role stays `agent`, never `admin`.
+- **`aiAgentId()` never throws**, and returns `null` when the user is missing or soft-deleted. Intake is the inbound-email webhook, where a throw would 5xx the mail provider and turn one unseeded row into a redelivery loop on every email. A missing AI user degrades to the pre-feature behaviour (tickets simply arrive unassigned) and cannot strand a ticket. Every *unassign* write is an unconditional `assignedToId: null` needing no lookup at all.
+- **It is not assignable by hand**: excluded from `GET /api/tickets/assignees`, and `PATCH /api/tickets/:id` 400s on it. Nothing in the PATCH path enqueues a job, so an AI-assigned ticket would sit there untouched. `UpdateTicket.tsx` therefore renders a *disabled* `SelectItem` for an assignee absent from the fetched list — same trick as `statusOptions`, because Radix renders the matching item's label and the trigger would otherwise claim "Unassigned" on a ticket the AI owns.
+- **It is protected from edit and delete**: `PATCH`/`DELETE /api/users/:id` 403 with `"The AI agent cannot be modified"`. The PATCH guard is what makes an email-keyed identity safe — a rename would break the lookup permanently. It still appears in `GET /api/users` (flagged `isAiAgent`, badged "Automated" in the table, with its row controls hidden) so admins know it exists.
+- **On reopen, only the AI's grip is released.** The student-reply path in `ingest-inbound-email.ts` fires for agent-resolved tickets too, so the release is a second, narrower `updateMany` inside a `$transaction` scoped to `assignedToId: <ai>` **and** `status: open` — the status condition limits it to a ticket the first statement just reopened, without which a follow-up email arriving mid-auto-resolve would pull the assignment out from under the worker. Net rule: an AI-resolved ticket whose answer didn't hold goes back to the shared pool; an agent-resolved one stays with whoever answered it.
+
+### Resolution time and the dashboard
+
+- **`Ticket.resolvedAt`** is set when a ticket *reaches* `resolved` (the worker's `sendResolution`, or an agent's PATCH), cleared when a student's reply reopens it, and left alone by `closed`. `updatedAt` can't stand in for it — any later edit bumps that, so the duration would drift every time the ticket is touched. Re-PATCHing `resolved` on an already-resolved ticket does **not** restart the clock (`resolvedAtChange` in `routes/tickets.ts`).
+- **The dashboard** is `/` (`frontend/src/pages/DashboardPage.tsx`), open to any signed-in staff member, reading `GET /api/tickets/stats` → `ticketStats()` + `ticketsPerDay()` in `backend/src/tickets/ticket-stats.ts`. Both aggregates ship in one response (`{ stats, daily }`) because the page renders them together — splitting them would only add a second loading state. `ticketStats` is one raw-SQL statement with `count(…) FILTER` aggregates plus an `avg` over the date difference: Prisma can't `AVG` an interval, and once that query exists, four separate Prisma counts alongside it would be more code for more round-trips. Note the `::int` casts (the pg adapter returns `bigint`, which `JSON.stringify` throws on) and `::float8` (numeric arrives as a string).
+- **The 30-day chart** (`frontend/src/components/TicketsPerDayChart.tsx`) is hand-rolled from divs — no charting library, deliberately: 30 bars did not justify adding Recharts to a bundle already over 700 kB. Two things about it are load-bearing:
+  - `ticketsPerDay()` drives its result from `generate_series`, **not** from the ticket rows, so a day with no tickets returns 0 instead of vanishing — grouping the table alone would close the gap and misdate every bar after it. It buckets in **UTC** (`now() AT TIME ZONE 'utc'`) and returns the day as a `to_char` string, because `current_date` would bucket by the DB session's timezone and a `Date` would be re-read in the browser's — either one can shift a ticket into the neighbouring bar. The `TicketsPerDay.day` string must be formatted with `timeZone: "UTC"` on the client for the same reason.
+  - Chart conventions worth keeping if you touch it: one colour for every bar (colouring by height double-encodes what the bar's length already says), a hover **and focus** readout with the count leading, the whole column as the hit target (a quiet day's bar is a pixel tall), a `<details>` table view so no value is reachable only by pointer, and x-axis dates spaced evenly rather than by a fixed stride — a stride leaves a remainder that collides the last two labels.
+- **Metric definitions carry two deliberate choices.** "Resolved by AI" requires `aiResolvedAt IS NOT NULL AND status IN (resolved, closed)`, not `aiResolvedAt` alone — that column is retained as audit data after a reopen, so counting it alone would headline tickets sitting in an agent's queue and could exceed the resolved count. And the percentage is over *concluded* tickets, not the total, so it measures how the model does on tickets that reached an outcome rather than tracking the size of the backlog. Both derived figures are `null` (rendered `—`) rather than `0` when there's nothing to divide by.
+- ⚠️ The backfill in `add_ticket_resolved_at` falls back to `updatedAt`, which on a row never modified after creation equals `createdAt`. `fix_resolved_at_backfill` nulls those: a zero duration isn't a fast resolution, it's an absence of evidence, and `avg` skips nulls.
 - **Knowledge base**: `backend/knowledge-base.md`, loaded and cached by `backend/src/tickets/knowledge-base.ts` (resolved relative to the source, not the cwd; override with `KNOWLEDGE_BASE_PATH`). It ships in the system prompt behind a `cache_control` breakpoint since it is byte-identical on every job. Its §10 escalation rules are policy, not code — edit the markdown, not the prompt.
-- **Env**: `AUTO_RESOLVE_ENABLED`, `AUTO_RESOLVE_MODEL`, `AUTO_RESOLVE_CONFIDENCE_THRESHOLD`, `SUPPORT_EMAIL`, `SUPPORT_NAME` — see `backend/.env.example`.
+- **Env**: `AUTO_RESOLVE_ENABLED`, `AUTO_RESOLVE_MODEL`, `AUTO_RESOLVE_CONFIDENCE_THRESHOLD`, `SUPPORT_EMAIL`, `SUPPORT_NAME`, `AI_AGENT_EMAIL` — see `backend/.env.example`.
 - ⚠️ **No email is actually sent.** The auto-resolve reply is stored as an outbound `Message` exactly as an agent reply is; Mailgun delivery is still Phase 4.
 
 ## Authentication
@@ -80,7 +101,7 @@ Better Auth (email/password only), configured in `backend/src/auth.ts` with the 
 
 - **Mounted before `express.json()`**: the handler is `app.all("/api/auth/*splat", toNodeHandler(auth))` in `backend/src/index.ts`. Keep it above the JSON body parser — mounting it after makes the auth client hang.
 - **Sign-up is disabled** (`disableSignUp: true`): users are provisioned server-side only. The admin comes from `bun run db:seed` (reads `ADMIN_EMAIL` / `ADMIN_PASSWORD`; idempotent).
-- **Create users via Better Auth, never raw Prisma writes**: passwords must be hashed with Better Auth's own hasher. The seed shows the pattern — `auth.$context` → `ctx.internalAdapter.createUser` + `ctx.password.hash` + `linkAccount` with `providerId: "credential"`.
+- **Create users via Better Auth, never raw Prisma writes**: passwords must be hashed with Better Auth's own hasher. The seed shows the pattern — `auth.$context` → `ctx.internalAdapter.createUser` + `ctx.password.hash` + `linkAccount` with `providerId: "credential"`. The one exception is the AI agent (`bun run db:seed:ai`), which omits `linkAccount` precisely so it can't sign in — see "The AI agent user" above.
 - **`role` (`admin` | `agent`)** is a Better Auth additional field with `input: false`: it can never be set through the API, only server-side. Default is `agent`.
 - **Protecting backend routes**: use `requireAuth` from `backend/src/require-auth.ts`; it resolves the session cookie and sets `req.user` / `req.session` (typed via module augmentation). For admin-only routes, chain `requireAdmin` from `backend/src/require-admin.ts` *after* `requireAuth` (e.g. `app.get("/api/users", requireAuth, requireAdmin, handler)`) — it checks `req.user.role === "admin"` and 403s otherwise. It is authorization only and assumes `requireAuth` already populated `req.user`.
 - **Frontend client**: `frontend/src/lib/auth-client.ts` exports `signIn`, `signOut`, `useSession` from `createAuthClient()` — deliberately no `baseURL`, since the Vite proxy maps the default `/api/auth` basePath to the backend. It declares `role` via the `inferAdditionalFields` client plugin (the backend's auth type can't be imported across packages) — keep that declaration in sync with `user.additionalFields` in `backend/src/auth.ts`.
@@ -95,6 +116,7 @@ Backend (`backend/`):
 - `bun install` — install deps
 - `bun run dev` — start with hot reload (`bun --watch`)
 - `bun run typecheck` — type-check only
+- `bun run db:seed` — the admin user; `bun run db:seed:ai` — the AI agent inbound tickets are assigned to (both idempotent)
 
 Frontend (`frontend/`):
 
@@ -178,7 +200,14 @@ Don't use it for: business-logic debugging, refactoring, code review, or general
 
 ## Where we are in the plan
 
-See `implementation-plan.md` for the full phased breakdown. **Phase 1 — Foundation & Setup** is complete (Tailwind v4 + shadcn/ui included). **Phase 2 — Authentication** is underway: Better Auth with email/password login, protected routes, and an admin seed script are in place; the UI (login, nav, layout, tickets placeholder) uses shadcn components throughout. An admin-only `/users` page exists (heading placeholder, guarded by `AdminRoute`; the NavBar shows its link to admins only) — user management itself is not built yet.
+See `implementation-plan.md` for the full phased breakdown.
+
+- **Phase 1 — Foundation & Setup**: complete (Tailwind v4 + shadcn/ui included).
+- **Phase 2 — Authentication**: complete. Better Auth email/password, protected + admin-guarded routes, admin seed.
+- **Phase 3 — Tickets**: list with server-side sort/filter/search/pagination, detail page with thread, reply composer, status/category/assignee editing.
+- **AI features**: reply polish, ticket summary, category classification, and auto-resolution — all on Claude via pg-boss workers.
+- **Phase 7 — User Management & Dashboard**: user CRUD is done (`/users`, admin-only, soft delete). The dashboard is done and lives at `/` — five headline metrics from `GET /api/tickets/stats`. Still open in this phase: counts by category, today/week buckets, and the sidebar nav (it's a top nav today).
+- **Phase 4 — Email (Mailgun)** is the notable gap: ⚠️ nothing actually sends mail yet. Inbound arrives via the webhook; outbound replies (agent *and* AI) are only stored as `Message` rows.
 
 When picking up new work, check `implementation-plan.md` to see which phase the task belongs to and what its prerequisites are.
 
@@ -186,9 +215,9 @@ When picking up new work, check `implementation-plan.md` to see which phase the 
 
 These are documented at the bottom of `implementation-plan.md`. Flag any work that would silently commit to one of these choices:
 
-- ~~Reopen behaviour on closed tickets when a student replies~~ — **settled**: the inbound webhook reopens a `resolved`/`closed` ticket to `open` (`ingest-inbound-email.ts`). Now load-bearing: it is how a student gets a human after an AI-resolved ticket.
+- ~~Reopen behaviour on closed tickets when a student replies~~ — **settled**: the inbound webhook reopens a `resolved`/`closed` ticket to `open` (`ingest-inbound-email.ts`). Now load-bearing: it is how a student gets a human after an AI-resolved ticket. **Assignment on reopen is settled too**: an AI-resolved ticket is released to the shared pool, an agent-resolved one stays with the agent who answered it.
 - Whether AI auto-assigns category or only suggests it
-- ~~Routing for refund-request tickets~~ — **partly settled**: knowledge-base §10 escalates chargebacks, disputed charges, and refunds outside the 30-day window to a human. Whether an escalated refund is auto-*assigned* to anyone is still open.
+- ~~Routing for refund-request tickets~~ — **settled**: knowledge-base §10 escalates chargebacks, disputed charges, and refunds outside the 30-day window to a human, and an escalated ticket is left **unassigned** for whoever picks it up — for every category, not just refunds. Per-category routing would need a rule the app doesn't have (there are no teams or queues yet).
 - Attachment storage policy
 - PII redaction before embedding past tickets
 - LLM data residency constraints

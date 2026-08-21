@@ -21,6 +21,7 @@ const sampleUsers = [
     email: "ada@example.com",
     role: Role.admin,
     createdAt: "2024-01-15T10:00:00.000Z",
+    isAiAgent: false,
   },
   {
     id: "2",
@@ -28,8 +29,20 @@ const sampleUsers = [
     email: "glen@example.com",
     role: Role.agent,
     createdAt: "2024-03-20T10:00:00.000Z",
+    isAiAgent: false,
   },
 ];
+
+// The AI agent is listed like anyone else so admins know it exists, but it has
+// no password to change and deleting it would break auto-resolve assignment.
+const aiAgent = {
+  id: "3",
+  name: "AI",
+  email: "ai@helpdesk.local",
+  role: Role.agent,
+  createdAt: "2024-02-01T10:00:00.000Z",
+  isAiAgent: true,
+};
 
 // Mirror the page's own formatter so the expected string matches regardless of
 // the runtime's locale/timezone.
@@ -103,6 +116,39 @@ describe("UsersPage", () => {
     expect(
       screen.queryByRole("button", { name: "Delete Ada Admin" }),
     ).not.toBeInTheDocument();
+  });
+
+  describe("the AI agent row", () => {
+    async function renderWithAiAgent() {
+      mockGet().mockResolvedValue({
+        data: { users: [...sampleUsers, aiAgent] },
+      });
+      renderWithClient(<UsersPage />);
+      return screen.findByText("ai@helpdesk.local");
+    }
+
+    it("is labelled so admins can tell it apart from staff", async () => {
+      await renderWithAiAgent();
+
+      expect(screen.getByText("Automated")).toBeInTheDocument();
+    });
+
+    // Both routes reject it server-side; offering the controls anyway would only
+    // produce a 403.
+    it("offers neither edit nor delete", async () => {
+      await renderWithAiAgent();
+
+      expect(
+        screen.queryByRole("button", { name: "Delete AI" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Edit AI" }),
+      ).not.toBeInTheDocument();
+      // The ordinary agent alongside it still has both.
+      expect(
+        screen.getByRole("button", { name: "Delete Glen Agent" }),
+      ).toBeInTheDocument();
+    });
   });
 
   it("shows the empty state when no users exist", async () => {

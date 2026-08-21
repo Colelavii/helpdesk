@@ -602,6 +602,25 @@ describe("autoResolveTicket", () => {
       expect(outcomeCall()?.data.aiResolvedAt).toBeInstanceOf(Date);
     });
 
+    // resolvedAt is what the dashboard measures time-to-resolve from, and it
+    // describes the same instant as aiResolvedAt — one `new Date()` for both, so
+    // the two can never disagree by a stray millisecond.
+    it("stamps resolvedAt with the same instant as aiResolvedAt", async () => {
+      await autoResolveTicket(7);
+
+      const { resolvedAt, aiResolvedAt } = outcomeCall()?.data ?? {};
+      expect(resolvedAt).toBeInstanceOf(Date);
+      expect(resolvedAt).toEqual(aiResolvedAt);
+    });
+
+    // "Assigned to AI" is the audit answer to "who answered this?", so unlike
+    // every other exit from the auto-resolve window this one keeps the assignee.
+    it("leaves the ticket assigned to the AI", async () => {
+      await autoResolveTicket(7);
+
+      expect(outcomeCall()?.data).not.toHaveProperty("assignedToId");
+    });
+
     it("writes the model's reply as an outbound message", async () => {
       await autoResolveTicket(7);
 
@@ -668,6 +687,9 @@ describe("autoResolveTicket", () => {
         status: TicketStatus.open,
         aiConfidence: 0.3,
         aiDecision: "Chargeback — escalation rule 10.",
+        // Released back to the shared pool: the AI is done with it, so it must
+        // not be left showing the AI as its owner.
+        assignedToId: null,
       });
       expect(messageCalls).toHaveLength(0);
     });
@@ -780,7 +802,10 @@ describe("autoResolveTicket", () => {
         MissingAutoResolveApiKeyError,
       );
 
-      expect(outcomeCall()?.data).toEqual({ status: TicketStatus.open });
+      expect(outcomeCall()?.data).toEqual({
+        status: TicketStatus.open,
+        assignedToId: null,
+      });
     });
 
     it("hands an unreadable knowledge base straight to the agents", async () => {
@@ -790,7 +815,20 @@ describe("autoResolveTicket", () => {
         "Could not read the knowledge base",
       );
 
-      expect(outcomeCall()?.data).toEqual({ status: TicketStatus.open });
+      expect(outcomeCall()?.data).toEqual({
+        status: TicketStatus.open,
+        assignedToId: null,
+      });
+    });
+
+    // The AI still owns a ticket going back to `new` — the queue's retry will
+    // re-claim it — so only the hand-it-to-a-human path releases the assignee.
+    it("keeps the AI assigned when the ticket goes back to new", async () => {
+      createError = new Error("upstream is down");
+
+      await expect(autoResolveTicket(7)).rejects.toThrow("upstream is down");
+
+      expect(outcomeCall()?.data).not.toHaveProperty("assignedToId");
     });
 
     // Losing the model failure to a secondary database error would hide why the
@@ -818,7 +856,9 @@ describe("skipAutoResolve", () => {
 
     expect(updateManyCalls[0]).toEqual({
       where: { id: 7, status: TicketStatus.new },
-      data: { status: TicketStatus.open },
+      // Unassigned too: no model is ever going to look at it, so the AI must not
+      // be left holding it.
+      data: { status: TicketStatus.open, assignedToId: null },
     });
   });
 });
@@ -857,7 +897,7 @@ describe("scheduleTicketAutoResolve", () => {
       expect(sendCalls).toHaveLength(0);
       expect(updateManyCalls[0]).toEqual({
         where: { id: 7, status: TicketStatus.new },
-        data: { status: TicketStatus.open },
+        data: { status: TicketStatus.open, assignedToId: null },
       });
     });
 
@@ -871,7 +911,10 @@ describe("scheduleTicketAutoResolve", () => {
         restore();
       }
 
-      expect(updateManyCalls[0]?.data).toEqual({ status: TicketStatus.open });
+      expect(updateManyCalls[0]?.data).toEqual({
+        status: TicketStatus.open,
+        assignedToId: null,
+      });
     });
 
     // The webhook has already told the provider we accepted the email; throwing
@@ -989,7 +1032,10 @@ describe("handleAutoResolveJobs", () => {
       restore();
     }
 
-    expect(outcomeCall()?.data).toEqual({ status: TicketStatus.open });
+    expect(outcomeCall()?.data).toEqual({
+      status: TicketStatus.open,
+      assignedToId: null,
+    });
   });
 
   it("completes the job when the knowledge base cannot be read", async () => {
@@ -1002,6 +1048,9 @@ describe("handleAutoResolveJobs", () => {
       restore();
     }
 
-    expect(outcomeCall()?.data).toEqual({ status: TicketStatus.open });
+    expect(outcomeCall()?.data).toEqual({
+      status: TicketStatus.open,
+      assignedToId: null,
+    });
   });
 });

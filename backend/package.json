@@ -15,7 +15,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
-    "db:seed": "bun run src/seed.ts"
+    "db:seed": "bun run src/seed.ts",
+    "db:seed:ai": "bun run src/seed-ai-agent.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",

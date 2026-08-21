@@ -17,13 +17,13 @@ export default function NavBar() {
     <nav className="flex items-center justify-between border-b bg-background px-6 py-3">
       <div className="flex gap-4">
         <TextLink to="/" variant="nav">
-          Home
+          Dashboard
         </TextLink>
         <TextLink to="/tickets" variant="nav">
           Tickets
         </TextLink>
         {session?.user.role === Role.admin && (
-          <TextLink to="/users" target="_blank" variant="nav">
+          <TextLink to="/users" variant="nav">
             Users
           </TextLink>
         )}

@@ -129,6 +129,10 @@ export async function autoResolveTicket(
       status: TicketStatus.open,
       aiConfidence: decision.confidence,
       aiDecision: reason,
+      // The AI is done with it, so it goes back to the shared pool for whoever
+      // picks it up. Written in the same statement as the status so an escalated
+      // ticket can never be left showing the AI as its owner.
+      assignedToId: null,
     },
   });
 
@@ -146,14 +150,22 @@ async function sendResolution(
   // reply is written, so the student never gets a message the agent didn't
   // expect. No email is sent yet — Mailgun delivery is wired in Phase 4, and
   // this outbound message is exactly what an agent reply records today.
+  // One timestamp for both columns: aiResolvedAt records that the model answered
+  // it, resolvedAt is what the dashboard measures time-to-resolve from, and they
+  // describe the same instant.
+  const now = new Date();
+
   return prisma.$transaction(async (tx) => {
     const { count } = await tx.ticket.updateMany({
       where: { id: ticketId, status: TicketStatus.processing },
       data: {
         status: TicketStatus.resolved,
-        aiResolvedAt: new Date(),
+        aiResolvedAt: now,
+        resolvedAt: now,
         aiConfidence: decision.confidence,
         aiDecision: decision.reason,
+        // assignedToId is deliberately left alone: the ticket stays assigned to
+        // the AI, which is the audit answer to "who answered this?".
       },
     });
     if (count !== 1) return "superseded";
@@ -179,7 +191,8 @@ async function sendResolution(
 export async function skipAutoResolve(ticketId: number): Promise<void> {
   await prisma.ticket.updateMany({
     where: { id: ticketId, status: TicketStatus.new },
-    data: { status: TicketStatus.open },
+    // No model will ever look at it, so the AI shouldn't be holding it either.
+    data: { status: TicketStatus.open, assignedToId: null },
   });
 }
 
@@ -190,7 +203,13 @@ async function releaseClaim(
   try {
     await prisma.ticket.updateMany({
       where: { id: ticketId, status: TicketStatus.processing },
-      data: { status },
+      // Only the hand-it-to-a-human path releases the assignment. Going back to
+      // `new` keeps it: the AI still owns the ticket and the queue's retry will
+      // re-claim it.
+      data: {
+        status,
+        ...(status === TicketStatus.open && { assignedToId: null }),
+      },
     });
   } catch (error) {
     // The original failure is the one worth propagating — losing it to a

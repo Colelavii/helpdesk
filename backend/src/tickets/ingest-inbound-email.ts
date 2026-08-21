@@ -3,6 +3,7 @@ import { TicketStatus } from "@helpdesk/core";
 import { prisma } from "../prisma.ts";
 import { normalizeSubject } from "./normalize-subject.ts";
 import { sanitizeHtml } from "./sanitize-html.ts";
+import { aiAgentId } from "./ai-agent.ts";
 
 // Upper bounds on an inbound email. Deliberately generous: a rejected payload is
 // a student's support request that never gets answered, so these exist to stop
@@ -116,11 +117,38 @@ export async function ingestInboundEmail(
           references: references ?? [],
         },
       });
-      // A reply on a resolved/closed ticket reopens it.
-      await prisma.ticket.updateMany({
-        where: { id: parent.ticketId, status: { in: ["resolved", "closed"] } },
-        data: { status: "open" },
-      });
+      // A reply on a resolved/closed ticket reopens it, and it is no longer
+      // resolved, so the time-to-resolve stamp goes with it.
+      //
+      // The assignment is a separate, narrower statement rather than an
+      // `assignedToId: null` in the same data: this path fires for tickets a
+      // *human* resolved and still owns, and clearing those would take an
+      // agent's own thread away from them. So only the AI's grip is released —
+      // an AI-resolved ticket whose answer didn't hold goes to the shared pool,
+      // while an agent-resolved one stays with whoever answered it.
+      const aiId = await aiAgentId();
+      await prisma.$transaction([
+        prisma.ticket.updateMany({
+          where: { id: parent.ticketId, status: { in: ["resolved", "closed"] } },
+          data: { status: "open", resolvedAt: null },
+        }),
+        ...(aiId
+          ? [
+              prisma.ticket.updateMany({
+                // `status: open` is what limits this to a ticket the statement
+                // above just reopened. Without it, a follow-up email arriving
+                // while the ticket is still `new`/`processing` would pull the
+                // assignment out from under the worker mid-call.
+                where: {
+                  id: parent.ticketId,
+                  assignedToId: aiId,
+                  status: "open",
+                },
+                data: { assignedToId: null },
+              }),
+            ]
+          : []),
+      ]);
       return { ticketId: parent.ticketId, status: "threaded" };
     }
   }
@@ -130,12 +158,19 @@ export async function ingestInboundEmail(
   // `open` — scheduleTicketAutoResolve (called by the webhook route right
   // after this) assumes exactly that, and only moves it to `open` itself when
   // no worker will ever pick it up.
+  // Assigned to the AI agent from the moment it exists, so the ticket never has
+  // a status saying the model owns it and an empty assignee saying nobody does.
+  // Null when the AI user hasn't been seeded — that just means unassigned, which
+  // is exactly how tickets behaved before it existed.
+  const assignedToId = await aiAgentId();
+
   const ticket = await prisma.ticket.create({
     data: {
       subject,
       requesterEmail: fromEmail,
       requesterName: fromName,
       status: TicketStatus.new,
+      assignedToId,
       messages: {
         create: {
           direction: "inbound",

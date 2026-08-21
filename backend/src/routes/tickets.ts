@@ -19,6 +19,9 @@ import {
   summarizeTicket,
   MissingSummaryApiKeyError,
 } from "../tickets/summarize-ticket.ts";
+import { aiAgentEmail } from "../tickets/ai-agent.ts";
+import { ticketStats, ticketsPerDay } from "../tickets/ticket-stats.ts";
+import { TicketStatus as DbTicketStatus } from "../generated/prisma/enums.ts";
 import type { Prisma } from "../generated/prisma/client.ts";
 
 export const ticketsRouter = Router();
@@ -110,13 +113,28 @@ ticketsRouter.get("/", async (req: Request, res: Response) => {
 // Staff a ticket can be assigned to. Any signed-in user may fetch this (it's
 // needed to populate the assignee picker), so it's not behind requireAdmin.
 // Registered before "/:id" so "assignees" isn't captured as an id.
+//
+// The AI agent is excluded: this list feeds the picker, and assigning through
+// PATCH enqueues no auto-resolve job, so handing a ticket to the AI by hand
+// would park it on something that will never look at it.
 ticketsRouter.get("/assignees", async (_req: Request, res: Response) => {
   const users = await prisma.user.findMany({
-    where: { deletedAt: null },
+    where: { deletedAt: null, email: { not: aiAgentEmail() } },
     select: { id: true, name: true, email: true },
     orderBy: { name: "asc" },
   });
   res.json({ users });
+});
+
+// Dashboard headline figures plus the 30-day intake series. Also registered
+// before "/:id" — otherwise parseId would take "stats" for an id and 404 "Ticket
+// not found".
+//
+// Both aggregates ship in one response: the dashboard renders them together, so
+// splitting them would only buy the page a second loading state to manage.
+ticketsRouter.get("/stats", async (_req: Request, res: Response) => {
+  const [stats, daily] = await Promise.all([ticketStats(), ticketsPerDay()]);
+  res.json({ stats, daily });
 });
 
 ticketsRouter.get(
@@ -177,6 +195,27 @@ const updateTicketSchema = z.object({
   category: z.enum(TicketCategory).nullable().optional(),
 });
 
+// What an agent's status change does to `resolvedAt`, which the dashboard
+// measures time-to-resolve from.
+//
+// Reaching `resolved` stamps it, but only from a different status: re-sending
+// `resolved` on an already-resolved ticket must not restart the clock. Reopening
+// clears it — the ticket isn't resolved any more. `closed` deliberately leaves it
+// alone, so resolving and then closing keeps the moment it was answered, and
+// closing an unanswered ticket never invents one.
+// `current` comes off a Prisma row, so it's the generated enum rather than core's
+// (the two carry the same values but aren't assignable to each other).
+function resolvedAtChange(
+  current: DbTicketStatus,
+  next: TicketStatus | undefined,
+): { resolvedAt?: Date | null } {
+  if (next === TicketStatus.resolved) {
+    return current === DbTicketStatus.resolved ? {} : { resolvedAt: new Date() };
+  }
+  if (next === TicketStatus.open) return { resolvedAt: null };
+  return {};
+}
+
 ticketsRouter.patch(
   "/:id",
   async (req: Request<{ id: string }>, res: Response) => {
@@ -188,7 +227,8 @@ ticketsRouter.patch(
 
     const existing = await prisma.ticket.findUnique({
       where: { id },
-      select: { id: true },
+      // status is needed to decide what happens to resolvedAt below.
+      select: { id: true, status: true },
     });
     if (!existing) {
       res.status(404).json({ error: "Ticket not found" });
@@ -199,10 +239,19 @@ ticketsRouter.patch(
     if (data.assignedToId) {
       const assignee = await prisma.user.findFirst({
         where: { id: data.assignedToId, deletedAt: null },
-        select: { id: true },
+        select: { id: true, email: true },
       });
       if (!assignee) {
         res.status(400).json({ error: "Assignee not found" });
+        return;
+      }
+      // Excluding it from GET /assignees hides it from the picker; this closes
+      // the hand-crafted-request version of the same hole. Nothing here enqueues
+      // an auto-resolve job, so an AI-assigned ticket would just sit there.
+      if (assignee.email === aiAgentEmail()) {
+        res
+          .status(400)
+          .json({ error: "Tickets cannot be assigned to the AI agent" });
         return;
       }
     }
@@ -216,6 +265,7 @@ ticketsRouter.patch(
         }),
         ...(data.status !== undefined && { status: data.status }),
         ...(data.category !== undefined && { category: data.category }),
+        ...resolvedAtChange(existing.status, data.status),
       },
       select: {
         id: true,
