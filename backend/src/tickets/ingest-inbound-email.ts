@@ -22,9 +22,33 @@ const MAX_BODY_HTML_LENGTH = MAX_BODY_LENGTH * 2;
 const MAX_MESSAGE_ID_LENGTH = 998; // RFC 5322 line-length limit
 const MAX_REFERENCES = 100;
 
+// Exported so a provider adapter can clip an oversized real-world email down to
+// the contract instead of handing it over and getting a 400 — a rejected payload
+// is a support request nobody answers. Kept here so the caps and the schema that
+// enforces them can't drift apart.
+export const inboundEmailLimits = {
+  subject: MAX_SUBJECT_LENGTH,
+  body: MAX_BODY_LENGTH,
+  bodyHtml: MAX_BODY_HTML_LENGTH,
+  messageId: MAX_MESSAGE_ID_LENGTH,
+  references: MAX_REFERENCES,
+} as const;
+
+// RFC 5322 writes a Message-Id wrapped in angle brackets ("<id@host>") while the
+// identifier itself excludes them. Normalize to the bare form at the boundary so
+// two spellings of the same id compare equal: threading looks an incoming
+// In-Reply-To up against stored messageIds, and one side keeping the brackets
+// would silently open a new ticket for every reply. Empty becomes undefined —
+// "<>" is not an id, and messageId is unique, so storing "" would collide.
+function normalizeMessageId(value: string): string | undefined {
+  return value.replace(/^<+/, "").replace(/>+$/, "").trim() || undefined;
+}
+
 // The provider-agnostic shape an inbound email is normalized to before it
-// becomes a ticket. A future Mailgun webhook adapter maps Mailgun's fields onto
-// this. `category` is deliberately absent — it's set later by AI classification.
+// becomes a ticket. `postmark-inbound.ts` maps Postmark's webhook payload onto
+// it; the contract stays provider-neutral so the ingest logic never learns who
+// delivered the mail. `category` is deliberately absent — AI classification sets
+// it later.
 export const inboundEmailSchema = z.object({
   fromEmail: z.email().trim().max(MAX_EMAIL_LENGTH),
   fromName: z
@@ -52,17 +76,35 @@ export const inboundEmailSchema = z.object({
     .max(MAX_BODY_HTML_LENGTH)
     .transform(sanitizeHtml)
     .optional(),
-  messageId: z.string().trim().max(MAX_MESSAGE_ID_LENGTH).optional(),
-  inReplyTo: z.string().trim().max(MAX_MESSAGE_ID_LENGTH).optional(),
+  messageId: z
+    .string()
+    .trim()
+    .max(MAX_MESSAGE_ID_LENGTH)
+    .transform(normalizeMessageId)
+    .optional(),
+  inReplyTo: z
+    .string()
+    .trim()
+    .max(MAX_MESSAGE_ID_LENGTH)
+    .transform(normalizeMessageId)
+    .optional(),
   // A long thread accumulates references, so the array is bounded too — without
   // it, each id being capped still allows an arbitrarily large `references[]`.
   references: z
     .array(z.string().trim().max(MAX_MESSAGE_ID_LENGTH))
     .max(MAX_REFERENCES)
+    .transform((ids) =>
+      ids
+        .map(normalizeMessageId)
+        .filter((id): id is string => id !== undefined),
+    )
     .optional(),
 });
 
 export type InboundEmailInput = z.infer<typeof inboundEmailSchema>;
+// The pre-transform shape: what a provider adapter builds and hands to the
+// schema, before normalization, sanitizing and the subject fallback run.
+export type InboundEmailPayload = z.input<typeof inboundEmailSchema>;
 
 export interface IngestResult {
   ticketId: number;

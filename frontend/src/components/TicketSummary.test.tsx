@@ -42,6 +42,8 @@ const ticket: TicketWithThread = {
       fromName: "Sam Student",
       body: "I can't log in.",
       createdAt: "2024-03-20T10:00:00.000Z",
+      sentAt: null,
+      deliveryError: null,
     },
   ],
   aiResolvedAt: null,

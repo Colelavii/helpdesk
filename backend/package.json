@@ -27,6 +27,7 @@
     "express": "^5.1.0",
     "jsdom": "^30.0.1",
     "pg-boss": "^12.27.0",
+    "postmark": "^5.1.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

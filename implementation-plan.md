@@ -13,7 +13,7 @@ Goal: a project skeleton that runs locally with Docker and a database connection
 - [ ] Frontend: scaffold Vite + React + TypeScript, install React Router and Tailwind, render a placeholder home route
 - [ ] `docker-compose.yml` for local dev: Postgres service with a named volume
 - [ ] Install Prisma in backend, run `prisma init`, verify a no-op migration applies against the Docker Postgres
-- [ ] `.env.example` files for backend and frontend (DB URL, session secret, Mailgun keys, Anthropic key placeholders)
+- [ ] `.env.example` files for backend and frontend (DB URL, session secret, Postmark keys, Anthropic key placeholders)
 
 ## Phase 2 — Authentication & Admin Bootstrap
 
@@ -45,19 +45,20 @@ Goal: agents can view and update tickets in the UI. Tickets are still created ma
 - [ ] Frontend: ticket detail page showing the thread, status, category, assignment
 - [ ] Frontend: status change controls and category dropdown
 
-## Phase 4 — Email Pipeline (Mailgun)
+## Phase 4 — Email Pipeline (Postmark)
 
 Goal: forwarded emails create tickets, agent replies are actually sent, and student replies thread back to the right ticket.
 
-- [ ] Configure Mailgun domain DNS (SPF, DKIM) and an inbound route pointing at the webhook URL
-- [ ] Backend: `POST /webhooks/mailgun/inbound`, verify Mailgun signature
-- [ ] Parse inbound payload: subject, from, body, `Message-ID`, `In-Reply-To` / `References`
-- [ ] Threading logic: match `In-Reply-To` against stored outbound `Message-ID`s; if matched, append to existing ticket; otherwise create a new ticket
-- [ ] Store the outbound `Message-ID` on each sent message
-- [ ] Mailgun outbound send helper
-- [ ] Wire `POST /tickets/:id/messages` to send via Mailgun (set `In-Reply-To` to most recent inbound `Message-ID`)
-- [ ] Attachment handling: decide on store vs. skip; if storing, add `Attachment` model
+- [x] Configure a Postmark inbound server / forwarding address pointing at the webhook URL
+- [x] Backend: `POST /api/webhooks/postmark/inbound`, authenticated by the shared `INBOUND_EMAIL_SECRET` (header, query string, or basic auth in the URL — Postmark does **not** sign inbound webhooks, so a shared secret plus HTTPS is the mechanism, optionally narrowed by a firewall allow-list of Postmark's IP ranges)
+- [x] Parse inbound payload: subject, from, body, `Message-ID`, `In-Reply-To` / `References` — Postmark's own `MessageID` is a delivery UUID, not the RFC `Message-Id`, which lives in `Headers[]`
+- [x] Threading logic: match `In-Reply-To` against stored `Message-ID`s; if matched, append to the existing ticket, otherwise create a new one
+- [x] Store the outbound `Message-ID` on each sent message — minted by us before the send (`newOutboundMessageId`), since Postmark's send response returns a delivery UUID rather than an RFC `Message-Id`
+- [x] Postmark outbound send helper (`postmark` npm client, `POSTMARK_SERVER_TOKEN`) — `backend/src/tickets/send-email.ts`
+- [x] Wire `POST /tickets/:id/messages` and the auto-resolve worker's reply to send via Postmark, `In-Reply-To` set to the most recent message with an id, `References` continuing the chain. Sending runs on the `email-send` pg-boss queue with retries; `Message.sentAt` / `Message.deliveryError` record the outcome and surface on the thread
+- [ ] Attachment handling: decide on store vs. skip; if storing, add `Attachment` model. Inbound attachments are currently **dropped** by the adapter rather than committing to a policy
 - [ ] Local dev: expose the webhook with a tunnel (ngrok / cloudflared) and document in the README
+- [ ] Consider dropping or quarantining inbound mail Postmark flags as spam (`X-Spam-Status` is in `Headers[]`; every inbound email currently becomes a ticket)
 
 ## Phase 5 — AI Features (Claude)
 
@@ -115,8 +116,8 @@ Goal: a reproducible Docker deployment with reasonable observability.
 - [ ] Run `prisma migrate deploy` as part of backend container startup
 - [ ] Structured logging (pino) + request logging middleware
 - [ ] Centralised Express error handler with safe error responses
-- [ ] Rate limiting on `/auth/login` and the Mailgun webhook
-- [ ] README covering: env vars, first-run admin bootstrap, Mailgun domain setup, Anthropic key setup, how to run migrations
+- [ ] Rate limiting on `/auth/login` and the inbound-email webhook
+- [ ] README covering: env vars, first-run admin bootstrap, Postmark inbound setup, Anthropic key setup, how to run migrations
 
 ---
 

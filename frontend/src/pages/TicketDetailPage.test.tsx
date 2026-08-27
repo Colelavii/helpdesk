@@ -42,6 +42,8 @@ const sampleTicket: TicketWithThread = {
       fromName: "Sam Student",
       body: "I keep getting an error when logging in.",
       createdAt: "2024-03-20T10:00:00.000Z",
+      sentAt: null,
+      deliveryError: null,
     },
     {
       id: 2,
@@ -50,6 +52,8 @@ const sampleTicket: TicketWithThread = {
       fromName: "Support Agent",
       body: "Have you tried resetting your password?",
       createdAt: "2024-03-20T11:00:00.000Z",
+      sentAt: "2024-03-20T11:00:05.000Z",
+      deliveryError: null,
     },
   ],
   aiResolvedAt: null,

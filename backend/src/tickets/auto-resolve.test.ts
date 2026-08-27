@@ -53,6 +53,12 @@ mock.module("@anthropic-ai/sdk", () => ({
 type Where = { id: number; status?: unknown };
 type UpdateManyCall = { where: Where; data: Record<string, unknown> };
 type MessageCall = { data: Record<string, unknown> };
+type MessageUpdateCall = { where: { id: number }; data: Record<string, unknown> };
+
+// The newest message carrying a Message-Id, which the outbound reply threads
+// onto. Null means the ticket has none, so the reply starts a fresh chain.
+let threadParent: { messageId: string; references: string[] } | null = null;
+let messageUpdateCalls: MessageUpdateCall[] = [];
 
 type TicketRow = {
   status: string;
@@ -91,6 +97,15 @@ mock.module("../prisma.ts", () => ({
     ticket: {
       findUnique: async () => ticket,
       updateMany: async (args: UpdateManyCall) => updateMany(args),
+    },
+    message: {
+      // Read by replyThreadHeaders to continue the RFC threading chain.
+      findFirst: async () => threadParent,
+      // Written by the email-send queue when a reply can't be handed over.
+      update: async (args: MessageUpdateCall) => {
+        messageUpdateCalls.push(args);
+        return { id: 1 };
+      },
     },
     $transaction: async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx),
   },
@@ -150,6 +165,9 @@ const originalEnv = {
   KNOWLEDGE_BASE_PATH: process.env.KNOWLEDGE_BASE_PATH,
   SUPPORT_EMAIL: process.env.SUPPORT_EMAIL,
   SUPPORT_NAME: process.env.SUPPORT_NAME,
+  // bun loads the real .env into the test process, so a value set there would
+  // otherwise decide what these tests see — and this one outranks SUPPORT_EMAIL.
+  POSTMARK_FROM_EMAIL: process.env.POSTMARK_FROM_EMAIL,
 };
 
 // The model's JSON answer. Tests override a field to steer the decision.
@@ -242,6 +260,8 @@ beforeEach(() => {
   queueCalls = [];
   workCalls = [];
   sendError = null;
+  threadParent = null;
+  messageUpdateCalls = [];
 
   process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
   delete process.env.AUTO_RESOLVE_CONFIDENCE_THRESHOLD;
@@ -249,6 +269,7 @@ beforeEach(() => {
   delete process.env.KNOWLEDGE_BASE_PATH;
   delete process.env.SUPPORT_EMAIL;
   delete process.env.SUPPORT_NAME;
+  delete process.env.POSTMARK_FROM_EMAIL;
   // The loader caches, and breakKnowledgeBase() may have poisoned it.
   resetKnowledgeBaseCache();
 });
@@ -670,6 +691,68 @@ describe("autoResolveTicket", () => {
 
       expect(await autoResolveTicket(7)).toEqual({ status: "superseded" });
       expect(messageCalls).toHaveLength(0);
+    });
+
+    // The reply is only worth writing if it actually reaches the student, so the
+    // resolution hands it to the email-send queue.
+    it("queues the reply for sending", async () => {
+      await autoResolveTicket(7);
+
+      expect(sendCalls).toContainEqual({
+        name: "email-send",
+        data: { messageRowId: 1 },
+      });
+    });
+
+    // Queued after the transaction commits, never inside it: a worker could
+    // otherwise mail a reply whose transaction then rolled back.
+    it("queues nothing when an agent took the ticket mid-call", async () => {
+      updateManyCounts = [1, 0];
+
+      await autoResolveTicket(7);
+
+      expect(
+        sendCalls.filter((call) => call.name === "email-send"),
+      ).toHaveLength(0);
+    });
+
+    it("gives the reply a Message-Id so a student's reply can thread onto it", async () => {
+      await autoResolveTicket(7);
+
+      expect(messageCalls[0]?.data.messageId).toMatch(
+        /^[0-9a-f-]{36}@example\.com$/,
+      );
+    });
+
+    it("threads the reply onto the student's last message", async () => {
+      threadParent = {
+        messageId: "student-2@students.edu",
+        references: ["student-1@students.edu"],
+      };
+
+      await autoResolveTicket(7);
+
+      expect(messageCalls[0]?.data).toMatchObject({
+        inReplyTo: "student-2@students.edu",
+        references: ["student-1@students.edu", "student-2@students.edu"],
+      });
+    });
+
+    // A reply that is stored but unqueued must not undo the resolution: the
+    // ticket is answered, and the message records that it never left.
+    it("still resolves when the send queue refuses the job", async () => {
+      sendError = new Error("queue is down");
+      const originalError = console.error;
+      console.error = () => {};
+
+      try {
+        expect(await autoResolveTicket(7)).toEqual({ status: "resolved" });
+      } finally {
+        console.error = originalError;
+      }
+      expect(messageUpdateCalls[0]?.data).toEqual({
+        deliveryError: "This reply could not be queued for sending.",
+      });
     });
   });
 

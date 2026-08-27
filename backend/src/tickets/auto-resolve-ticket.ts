@@ -5,6 +5,12 @@ import {
   resolveTicket,
 } from "./resolve-ticket.ts";
 import { MissingKnowledgeBaseError } from "./knowledge-base.ts";
+import { supportIdentity } from "./support-identity.ts";
+import {
+  newOutboundMessageId,
+  replyThreadHeaders,
+} from "./outbound-message.ts";
+import { enqueueEmailSend } from "./email-queue.ts";
 
 export interface AutoResolveResult {
   status: "resolved" | "escalated" | "skipped" | "superseded";
@@ -26,15 +32,6 @@ function confidenceThreshold(): number {
     return defaultConfidenceThreshold;
   }
   return value;
-}
-
-// The identity an auto-sent reply is attributed to. It is not a User — no member
-// of staff wrote it — so the message's `sentById` stays null.
-function supportIdentity(): { email: string; name: string } {
-  return {
-    email: process.env.SUPPORT_EMAIL?.trim() || "support@example.com",
-    name: process.env.SUPPORT_NAME?.trim() || "Support",
-  };
 }
 
 // Retrying cannot fix a missing key or an unreadable knowledge base, so the
@@ -145,17 +142,23 @@ async function sendResolution(
 ): Promise<"resolved" | "superseded"> {
   const support = supportIdentity();
 
+  // Both reads happen before the transaction opens. Neither belongs inside it:
+  // the thread lookup only needs messages this transaction won't touch, and
+  // holding a transaction open across work it doesn't need is what turns a
+  // short write into a lock other requests queue behind.
+  const thread = await replyThreadHeaders(ticketId);
+  const outboundMessageId = newOutboundMessageId();
+
   // The status update runs first and doubles as the guard: if an agent has
   // touched the ticket since it was claimed, the transaction returns before the
   // reply is written, so the student never gets a message the agent didn't
-  // expect. No email is sent yet — Mailgun delivery is wired in Phase 4, and
-  // this outbound message is exactly what an agent reply records today.
+  // expect.
   // One timestamp for both columns: aiResolvedAt records that the model answered
   // it, resolvedAt is what the dashboard measures time-to-resolve from, and they
   // describe the same instant.
   const now = new Date();
 
-  return prisma.$transaction(async (tx) => {
+  const messageRowId = await prisma.$transaction(async (tx) => {
     const { count } = await tx.ticket.updateMany({
       where: { id: ticketId, status: TicketStatus.processing },
       data: {
@@ -168,20 +171,35 @@ async function sendResolution(
         // the AI, which is the audit answer to "who answered this?".
       },
     });
-    if (count !== 1) return "superseded";
+    if (count !== 1) return null;
 
-    await tx.message.create({
+    const message = await tx.message.create({
       data: {
         ticketId,
         direction: "outbound",
         fromEmail: support.email,
         fromName: support.name,
         body: decision.reply,
+        messageId: outboundMessageId,
+        inReplyTo: thread.inReplyTo,
+        references: thread.references,
       },
+      select: { id: true },
     });
 
-    return "resolved";
+    return message.id;
   });
+
+  if (messageRowId === null) return "superseded";
+
+  // Queued only after the transaction commits, and deliberately not inside it:
+  // a worker could otherwise pick the job up and mail the student a reply whose
+  // transaction then rolled back. enqueueEmailSend never throws — a reply that
+  // is stored but unsendable is recorded on the message, and the ticket is
+  // resolved either way.
+  await enqueueEmailSend(messageRowId);
+
+  return "resolved";
 }
 
 // Move a ticket out of the auto-resolve window without running the model, for

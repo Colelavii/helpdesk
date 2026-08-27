@@ -57,6 +57,12 @@ export interface TicketMessage {
   fromName: string;
   body: string;
   createdAt: string;
+  // Delivery state of an outbound reply, both null on inbound mail. `sentAt` is
+  // set once Postmark has accepted the message; `deliveryError` carries the last
+  // failure and is cleared by a later success. Neither set means it hasn't left:
+  // still queued, sending not configured, or a reply predating outbound email.
+  sentAt: string | null;
+  deliveryError: string | null;
 }
 
 // What the detail endpoint returns: a ticket plus its assignee, thread, and the

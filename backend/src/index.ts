@@ -8,12 +8,20 @@ import { webhooksRouter } from "./routes/webhooks.ts";
 import { startQueue, stopQueue } from "./queue.ts";
 import { registerClassificationWorker } from "./tickets/classification-queue.ts";
 import { registerAutoResolveWorker } from "./tickets/auto-resolve-queue.ts";
+import { registerEmailSendWorker } from "./tickets/email-queue.ts";
 
 const app = express();
 const port = Number(process.env.PORT) || 3001;
 
 // Better Auth must be mounted before express.json(), or its client hangs.
 app.all("/api/auth/*splat", toNodeHandler(auth));
+
+// Also mounted ahead of express.json(), for a different reason: the inbound-email
+// webhook needs a much larger body limit than the rest of the API (a Postmark
+// payload carries the whole HTML part and its attachments), so that router parses
+// its own bodies. Leaving it below this line would let the 100kb default 413 a
+// student's email before the route ran.
+app.use("/api/webhooks", webhooksRouter);
 
 app.use(express.json());
 
@@ -27,7 +35,6 @@ app.get("/api/me", requireAuth, (req: Request, res: Response) => {
 
 app.use("/api/users", usersRouter);
 app.use("/api/tickets", ticketsRouter);
-app.use("/api/webhooks", webhooksRouter);
 
 // The API serves regardless of the queue's health: the background jobs are an
 // enhancement, and an inbound email is still stored (and answerable) without
@@ -36,9 +43,10 @@ try {
   await startQueue();
   await registerClassificationWorker();
   await registerAutoResolveWorker();
+  await registerEmailSendWorker();
 } catch (error) {
   console.error(
-    "Job queue unavailable — inbound tickets will not be auto-classified or auto-resolved",
+    "Job queue unavailable — inbound tickets will not be auto-classified or auto-resolved, and replies will not be emailed",
     error,
   );
 }

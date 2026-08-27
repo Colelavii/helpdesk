@@ -23,8 +23,12 @@ const inbound: TicketMessage = {
   fromName: "Sam Student",
   body: "I keep getting an error when logging in.",
   createdAt: "2024-03-20T10:00:00.000Z",
+  sentAt: null,
+  deliveryError: null,
 };
 
+// Delivered, which is the ordinary case for an outbound reply and the one that
+// carries no delivery badge.
 const outbound: TicketMessage = {
   id: 2,
   direction: "outbound",
@@ -32,6 +36,8 @@ const outbound: TicketMessage = {
   fromName: "Support Agent",
   body: "Have you tried resetting your password?",
   createdAt: "2024-03-20T11:00:00.000Z",
+  sentAt: "2024-03-20T11:00:05.000Z",
+  deliveryError: null,
 };
 
 function ticketWith(messages: TicketMessage[]): TicketWithThread {
@@ -133,5 +139,53 @@ describe("MessageThread", () => {
     expect(screen.getByText("First line. Second line.").textContent).toBe(
       multiline.body,
     );
+  });
+
+  // Delivery state answers "did the student actually get this?", which only a
+  // reply we tried to send can fail at.
+  describe("delivery state", () => {
+    it("says nothing about a reply that was sent", () => {
+      renderWithClient(<MessageThread ticket={ticketWith([outbound])} />);
+
+      expect(screen.queryByText("Not sent")).not.toBeInTheDocument();
+      expect(screen.queryByText("Delivery failed")).not.toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("marks a reply that has not left as not sent", () => {
+      const queued: TicketMessage = { ...outbound, sentAt: null };
+
+      renderWithClient(<MessageThread ticket={ticketWith([queued])} />);
+
+      expect(screen.getByText("Not sent")).toBeInTheDocument();
+    });
+
+    it("surfaces the failure on a reply Postmark rejected", () => {
+      const failed: TicketMessage = {
+        ...outbound,
+        sentAt: null,
+        deliveryError: "Postmark rejected this reply: inactive recipient.",
+      };
+
+      renderWithClient(<MessageThread ticket={ticketWith([failed])} />);
+
+      expect(screen.getByText("Delivery failed")).toBeInTheDocument();
+      // The reason is what tells an agent what to do about it, so it is on the
+      // message itself and not only in a badge.
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Postmark rejected this reply: inactive recipient.",
+      );
+      // "Delivery failed" replaces "Not sent" rather than joining it.
+      expect(screen.queryByText("Not sent")).not.toBeInTheDocument();
+    });
+
+    // Inbound mail reached us by definition — a badge there would be noise, and
+    // the columns are null for it anyway.
+    it("never marks an inbound message as undelivered", () => {
+      renderWithClient(<MessageThread ticket={ticketWith([inbound])} />);
+
+      expect(screen.queryByText("Not sent")).not.toBeInTheDocument();
+      expect(screen.queryByText("Delivery failed")).not.toBeInTheDocument();
+    });
   });
 });

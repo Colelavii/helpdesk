@@ -26,7 +26,8 @@
 
 ## Email
 
-- **Mailgun** for both inbound (forwarded support emails via routes/webhook) and outbound (agent replies)
+- **Postmark** for both inbound (forwarded support emails via an inbound server webhook) and outbound (agent and AI replies)
+  - Inbound: `POST /api/webhooks/postmark/inbound`. Outbound: the `email-send` pg-boss queue, using the official `postmark` npm client.
 
 ## Deployment
 

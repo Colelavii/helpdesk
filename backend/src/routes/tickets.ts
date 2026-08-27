@@ -20,6 +20,11 @@ import {
   MissingSummaryApiKeyError,
 } from "../tickets/summarize-ticket.ts";
 import { aiAgentEmail } from "../tickets/ai-agent.ts";
+import {
+  newOutboundMessageId,
+  replyThreadHeaders,
+} from "../tickets/outbound-message.ts";
+import { enqueueEmailSend } from "../tickets/email-queue.ts";
 import { ticketStats, ticketsPerDay } from "../tickets/ticket-stats.ts";
 import { TicketStatus as DbTicketStatus } from "../generated/prisma/enums.ts";
 import type { Prisma } from "../generated/prisma/client.ts";
@@ -169,6 +174,9 @@ ticketsRouter.get(
             fromName: true,
             body: true,
             createdAt: true,
+            // Delivery state of an outbound reply; both null on inbound mail.
+            sentAt: true,
+            deliveryError: true,
           },
           orderBy: { createdAt: "asc" }, // oldest first — reads as a thread
         },
@@ -390,9 +398,17 @@ ticketsRouter.post(
   },
 );
 
-// Record an agent reply on a ticket. Stored as an outbound message attributed to
-// the signed-in agent (direction distinguishes agent replies from student
-// mail). No email is sent yet — Mailgun delivery is wired in Phase 4.
+// Record an agent reply on a ticket and send it to the student. Stored as an
+// outbound message attributed to the signed-in agent (direction distinguishes
+// agent replies from student mail), then handed to the email-send queue.
+//
+// `fromEmail` stays the agent's own address: it records who wrote the reply.
+// The email itself goes out From the support identity, because Postmark will
+// only send From a verified sender signature — see send-email.ts.
+//
+// The request does not wait on Postmark. It returns as soon as the reply is
+// stored, and delivery state (`sentAt` / `deliveryError`) appears on the
+// message once the worker has been through it.
 ticketsRouter.post(
   "/:id/messages",
   async (req: Request<{ id: string }>, res: Response) => {
@@ -418,6 +434,10 @@ ticketsRouter.post(
       return;
     }
 
+    // Read before the write: the chain continues from the newest message that
+    // has a Message-Id, and this reply isn't one of them yet.
+    const thread = await replyThreadHeaders(id);
+
     const message = await prisma.message.create({
       data: {
         ticketId: id,
@@ -426,6 +446,12 @@ ticketsRouter.post(
         fromName: agent.name,
         body: data.body,
         sentById: agent.id,
+        // Minted here rather than taken from Postmark's response, so the id
+        // exists on the row before the send and a student's reply can thread
+        // back onto it.
+        messageId: newOutboundMessageId(),
+        inReplyTo: thread.inReplyTo,
+        references: thread.references,
       },
       select: {
         id: true,
@@ -434,8 +460,12 @@ ticketsRouter.post(
         fromName: true,
         body: true,
         createdAt: true,
+        sentAt: true,
+        deliveryError: true,
       },
     });
+
+    await enqueueEmailSend(message.id);
 
     res.status(201).json({ message });
   },

@@ -42,19 +42,19 @@ enum MessageDirection {
 
 // Better Auth models. Password lives on Account.password, not User.
 model User {
-  id            String    @id
-  name          String
-  email         String
-  emailVerified Boolean   @default(false)
-  image         String?
-  role          Role    @default(agent)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id              String    @id
+  name            String
+  email           String
+  emailVerified   Boolean   @default(false)
+  image           String?
+  role            Role      @default(agent)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
   // Soft delete: non-null means the user is deactivated (hidden from lists,
   // sessions revoked, sign-in blocked). Unknown to Better Auth — managed by us.
-  deletedAt     DateTime?
-  sessions      Session[]
-  accounts      Account[]
+  deletedAt       DateTime?
+  sessions        Session[]
+  accounts        Account[]
   assignedTickets Ticket[]
   sentMessages    Message[]
 
@@ -149,25 +149,32 @@ model Ticket {
 // onto an existing ticket. `sentBy` is the agent for outbound messages, null for
 // inbound (student) ones.
 model Message {
-  id         Int              @id @default(autoincrement())
-  ticketId   Int
-  ticket     Ticket           @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  direction  MessageDirection
-  fromEmail  String
-  fromName   String
+  id            Int              @id @default(autoincrement())
+  ticketId      Int
+  ticket        Ticket           @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  direction     MessageDirection
+  fromEmail     String
+  fromName      String
   // `body` is the canonical plain-text form and is always present — it's what
   // the thread renders and what AI reads. `bodyHtml` is the optional rich
   // version (an email's text/html part); null when the source had none.
-  body       String
-  bodyHtml   String?
-  messageId  String?          @unique
-  inReplyTo  String?
-  references String[]
-  sentById   String?
-  sentBy     User?            @relation(fields: [sentById], references: [id])
-  createdAt  DateTime         @default(now())
+  body          String
+  bodyHtml      String?
+  messageId     String?          @unique
+  inReplyTo     String?
+  references    String[]
+  sentById      String?
+  sentBy        User?            @relation(fields: [sentById], references: [id])
+  // Delivery state of an *outbound* message, written by the email-send worker.
+  // Both stay null on an inbound message: nothing is delivered for mail we
+  // received. On an outbound one, `sentAt` non-null means Postmark accepted it;
+  // `deliveryError` holds the last failure and is cleared by a later success.
+  // Neither set means it hasn't left — queued, sending disabled, or (for rows
+  // predating outbound send) never attempted at all.
+  sentAt        DateTime?
+  deliveryError String?
+  createdAt     DateTime         @default(now())
 
   @@index([ticketId])
   @@map("message")
 }
-

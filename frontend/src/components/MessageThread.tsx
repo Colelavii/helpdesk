@@ -1,12 +1,29 @@
-import type { TicketWithThread } from "@helpdesk/core";
+import type { TicketMessage, TicketWithThread } from "@helpdesk/core";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import ErrorMessage from "@/components/ErrorMessage";
 import { cn } from "@/lib/utils";
 
 const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
   timeStyle: "short",
 });
+
+// Delivery state is only meaningful for a reply we tried to send — an inbound
+// message was delivered to us by definition. A successfully sent reply gets no
+// badge at all: that is the expected case, and badging it would put a label on
+// every message in the thread that says nothing.
+function DeliveryBadge({ message }: { message: TicketMessage }) {
+  if (message.direction !== "outbound") return null;
+  if (message.deliveryError) {
+    return <Badge variant="destructive">Delivery failed</Badge>;
+  }
+  // Covers three states that are all "the student hasn't received this":
+  // queued a moment ago, sending not configured, or a reply written before
+  // outbound email existed.
+  if (!message.sentAt) return <Badge variant="outline">Not sent</Badge>;
+  return null;
+}
 
 // Takes the whole ticket rather than its messages array so callers pass the
 // object they already hold.
@@ -45,6 +62,7 @@ export default function MessageThread({
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
+                    <DeliveryBadge message={message} />
                     <Badge
                       variant={
                         message.direction === "inbound"
@@ -62,6 +80,11 @@ export default function MessageThread({
               </CardHeader>
               <CardContent className="text-sm leading-relaxed whitespace-pre-wrap">
                 {message.body}
+                {message.deliveryError ? (
+                  <ErrorMessage className="mt-3 whitespace-normal">
+                    {message.deliveryError}
+                  </ErrorMessage>
+                ) : null}
               </CardContent>
             </Card>
           ))}
