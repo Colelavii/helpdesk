@@ -87,7 +87,7 @@ docker exec helpdesk-postgres psql -U postgres -d helpdesk -c "select state, ret
 
 Also set `POSTMARK_INBOUND_ADDRESS` to your server's **inbound** address (Servers → your server → Settings → Inbound). It becomes the `Reply-To` on everything sent, and it is what brings a customer's reply back into the helpdesk. It must not be the From address: a verified sender signature is usually a real mailbox or a forwarding alias, so replying to it delivers into someone's inbox and the ticket never hears about it. Postmark defaults `Reply-To` to `From` when none is sent, so leaving this unset silently breaks the return path — the sender warns on every send if it's missing or equal to the From.
 
-Note that while a Postmark account is **pending approval**, it only accepts recipients on the same domain as the From address. Sends to anyone else are rejected and recorded on the message as a delivery failure; that resolves when the account is approved, and needs no code change.
+Note that a **newly created Postmark account is pending approval** and only accepts recipients on the same domain as the From address. Sends to anyone else are rejected and recorded on the message as a delivery failure; it resolves when the account is approved and needs no code change. (This account was approved on 2026-08-31.)
 
 ### Receiving
 
